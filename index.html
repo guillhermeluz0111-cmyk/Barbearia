@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#11100e">
+  <title>Willzinho Barber — Agendamento</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="noise"></div>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="Ir para início">
+      <img class="brand-logo" src="assets/logo-willzinho.jpeg" alt="Willzinho Barber">
+      <span><b>WILLZINHO BARBER</b><small>AGENDE. CHEGUE. RENOVE.</small></span>
+    </a>
+    <nav aria-label="Navegação principal">
+      <a class="nav-link active" href="#booking">Agendar</a>
+    </nav>
+    <button class="outline-btn desktop-only" data-scroll="booking">Reservar horário <span>↗</span></button>
+  </header>
+
+  <main id="public-view">
+    <section class="hero">
+      <div class="hero-copy reveal">
+        <p class="eyebrow"><span></span> Seu estilo, no horário certo</p>
+        <h1>PRECISÃO<br><em>EM CADA</em><br>CORTE.</h1>
+        <p class="hero-text">Escolha seu serviço, encontre um horário livre e confirme em poucos passos.</p>
+        <button class="primary-btn" data-scroll="booking">Agendar agora <span>→</span></button>
+      </div>
+      <div class="hero-art reveal delay-1" aria-label="Logotipo Willzinho Barber">
+        <img class="hero-logo" src="assets/logo-willzinho.jpeg" alt="Willzinho Barber">
+        <div class="stamp">DESDE<br>2020</div>
+        <p>TRADIÇÃO <span>×</span> ATITUDE</p>
+      </div>
+      <div class="hero-meta reveal delay-2">
+        <div><small>HORÁRIOS</small><b>SEG — SÁB</b><span>10:00 — 20:00</span></div>
+        <div><small>DOMINGO</small><b>HORÁRIO ESPECIAL</b><span>10:00 — 13:00</span></div>
+      </div>
+    </section>
+
+    <section class="booking-section" id="booking">
+      <div class="section-heading">
+        <p class="eyebrow"><span></span> Agendamento online</p>
+        <h2>MONTE SEU<br><em>ATENDIMENTO</em></h2>
+        <p>Primeiro selecione os serviços. Assim mostramos apenas os horários em que o atendimento completo cabe na agenda.</p>
+      </div>
+
+      <div class="booking-layout">
+        <div class="booking-main">
+          <div class="step-block active" id="step-services">
+            <div class="step-title"><span>01</span><div><h3>Escolha os serviços</h3><p>Você pode selecionar mais de um.</p></div></div>
+            <div class="service-grid" id="service-grid"><div class="skeleton tall"></div><div class="skeleton tall"></div></div>
+          </div>
+
+          <div class="step-block locked" id="step-date">
+            <div class="step-title"><span>02</span><div><h3>Data e horário</h3><p>Disponibilidade calculada em tempo real.</p></div></div>
+            <div class="date-row"><label for="booking-date">Data</label><input id="booking-date" type="date"></div>
+            <div class="slots" id="time-slots"><p class="empty-note">Selecione os serviços e uma data.</p></div>
+          </div>
+
+          <div class="step-block locked" id="step-client">
+            <div class="step-title"><span>03</span><div><h3>Seus dados</h3><p>Usaremos o WhatsApp apenas sobre este agendamento.</p></div></div>
+            <div class="form-grid">
+              <label>Nome completo<input id="customer-name" autocomplete="name" placeholder="Como devemos chamar você?"></label>
+              <label>WhatsApp<input id="customer-phone" inputmode="tel" autocomplete="tel" placeholder="(00) 00000-0000"></label>
+            </div>
+          </div>
+        </div>
+
+        <aside class="booking-summary">
+          <p class="summary-kicker">SEU AGENDAMENTO</p>
+          <h3>Resumo</h3>
+          <div id="summary-services" class="summary-services"><p>Nenhum serviço selecionado.</p></div>
+          <div class="summary-row"><span>Data</span><b id="summary-date">—</b></div>
+          <div class="summary-row"><span>Horário</span><b id="summary-time">—</b></div>
+          <div class="summary-row"><span>Duração</span><b id="summary-duration">—</b></div>
+          <div class="summary-total"><span>Total</span><strong id="summary-total">R$ 0,00</strong></div>
+          <button id="confirm-booking" class="primary-btn full" disabled>Confirmar e abrir WhatsApp <span>→</span></button>
+          <small class="secure-note">✓ Você confere tudo antes de enviar a mensagem.</small>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="message-dialog" class="app-dialog">
+    <button class="dialog-close" aria-label="Fechar">×</button>
+    <p class="eyebrow"><span></span> Mensagem pronta</p><h3>CONFIRA ANTES DE ENVIAR</h3>
+    <textarea id="message-preview" rows="8"></textarea>
+    <button id="open-whatsapp" class="primary-btn full">Abrir WhatsApp <span>↗</span></button>
+  </dialog>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="store.js"></script>
+  <script src="app.js" defer></script>
+</body>
+</html>

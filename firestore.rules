@@ -1,0 +1,15 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Modo público solicitado. Qualquer pessoa pode ler e alterar o estado.
+    // Substitua por autenticação antes de utilizar dados reais de clientes.
+    match /system/state {
+      allow read, write: if true;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
