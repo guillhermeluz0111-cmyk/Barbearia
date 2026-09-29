@@ -1,0 +1,13 @@
+FOTOS DA SEÇÃO "NOSSO TRABALHO"
+
+Coloque aqui até 6 fotos com estes nomes exatos:
+
+  trabalho-1.jpg   (foto maior, à esquerda - de preferência vertical)
+  trabalho-2.jpg
+  trabalho-3.jpg
+  trabalho-4.jpg   (foto larga - de preferência horizontal)
+  trabalho-5.jpg   (foto larga - de preferência horizontal)
+  trabalho-6.jpg
+
+Enquanto a foto não existir, o site mostra um cartão com o nome do serviço no lugar.
+Dica: use fotos até ~1600px de largura e abaixo de 400 KB cada, para o site carregar rápido.

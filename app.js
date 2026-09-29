@@ -1,6 +1,6 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const state = { data: null, selected: [], date: '', time: '', rescheduleId: null, rescheduleTime: '' };
+const state = { data: null, selected: [], date: '', time: '', rescheduleId: null, rescheduleTime: '', clientKey: null, clientQuery: '' };
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const dateFmt = value => value ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(`${value}T12:00:00Z`)) : '—';
 const shortDate = value => new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', weekday: 'short', day: '2-digit', month: 'short' }).format(new Date(`${value}T12:00:00Z`));
@@ -124,10 +124,10 @@ function appointmentCard(item) {
     ? '<button class="mini-btn confirm" data-action="confirm">Confirmar</button><button class="mini-btn" data-action="reschedule">Reagendar</button><button class="mini-btn danger" data-action="no_show">Desistência</button>'
     : '<button class="mini-btn" data-action="remind">Lembrar</button><button class="mini-btn" data-action="attended">Compareceu</button><button class="mini-btn" data-action="reschedule">Reagendar</button><button class="mini-btn danger" data-action="no_show">Desistência</button>';
   return `<article class="appointment-card" data-appointment="${item.id}">
-    <div class="appointment-head"><strong>${item.time} — ${item.customerName}</strong><span class="status-pill ${item.status}">${statusLabels[item.status] || item.status}</span></div>
-    <p>${item.services.map(service => service.name).join(' + ')} · ${BRL.format(item.total)}</p>
+    <div class="appointment-head"><strong>${item.time} — ${esc(item.customerName)}</strong><span class="status-pill ${item.status}">${statusLabels[item.status] || item.status}</span></div>
+    <p>${esc(item.services.map(service => service.name).join(' + '))} · ${BRL.format(item.total)}</p>
     <div class="appointment-details">
-      <dl><div><dt>Telefone</dt><dd>${item.phone}</dd></div><div><dt>Duração</dt><dd>${minutesLabel(item.duration)}</dd></div><div><dt>Data</dt><dd>${dateFmt(item.date)}</dd></div><div><dt>Criado em</dt><dd>${new Date(item.createdAt).toLocaleDateString('pt-BR')}</dd></div></dl>
+      <dl><div><dt>Telefone</dt><dd>${esc(item.phone)}</dd></div><div><dt>Duração</dt><dd>${minutesLabel(item.duration)}</dd></div><div><dt>Data</dt><dd>${dateFmt(item.date)}</dd></div><div><dt>Criado em</dt><dd>${new Date(item.createdAt).toLocaleDateString('pt-BR')}</dd></div></dl>
       <div class="action-row">${actions}</div>
     </div>
   </article>`;
@@ -257,11 +257,186 @@ async function saveHours(card) {
   catch (error) { toast(error.message); renderHours(); }
 }
 
+
+/* ---------- Clientes ---------- */
+const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+const phoneKey = phone => { const d = String(phone || '').replace(/\D/g, ''); return d.length > 11 && d.startsWith('55') ? d.slice(2) : d; };
+const phoneFmt = phone => {
+  const d = phoneKey(phone);
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return d || '—';
+};
+const initials = name => String(name || '?').trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase();
+const stamp = item => `${item.date}${item.time}`;
+const daysBetween = (a, b) => Math.round((new Date(`${b}T12:00:00Z`) - new Date(`${a}T12:00:00Z`)) / 86400000);
+
+function buildClients() {
+  const map = new Map();
+  state.data.appointments.slice().sort((a, b) => stamp(a).localeCompare(stamp(b))).forEach(item => {
+    const key = phoneKey(item.phone) || item.customerName;
+    const client = map.get(key) || { key, appts: [] };
+    client.name = item.customerName; client.phone = item.phone; client.appts.push(item);
+    map.set(key, client);
+  });
+  return [...map.values()].map(client => {
+    const attended = client.appts.filter(item => item.status === 'attended');
+    return { ...client, attended, spent: attended.reduce((sum, item) => sum + item.total, 0), last: client.appts[client.appts.length - 1] };
+  }).sort((a, b) => stamp(b.last).localeCompare(stamp(a.last)));
+}
+
+function serviceStats(client) {
+  const today = todayISO(); const map = new Map();
+  client.appts.filter(item => item.status !== 'no_show').forEach(item => item.services.forEach(service => {
+    const row = map.get(service.id) || { name: service.name, count: 0, done: 0, revenue: 0, last: '' };
+    row.count += 1;
+    if (item.status === 'attended') { row.done += 1; row.revenue += service.price; }
+    if ((item.status === 'attended' || item.date <= today) && item.date > row.last) row.last = item.date;
+    map.set(service.id, row);
+  }));
+  return [...map.values()].sort((a, b) => b.count - a.count || b.revenue - a.revenue);
+}
+
+function renderClients() {
+  const root = $('#admin-clients');
+  const clients = buildClients();
+  const current = state.clientKey && clients.find(client => client.key === state.clientKey);
+  if (current) return renderClientDetail(root, current);
+  state.clientKey = null;
+  root.innerHTML = `<div class="panel-card"><div class="panel-header"><div><h3>LISTA DE CLIENTES</h3><p>${clients.length} ${clients.length === 1 ? 'cliente' : 'clientes'} · clique em um cliente para ver o histórico completo</p></div></div>
+    <div class="client-toolbar"><input id="client-search" type="search" placeholder="Buscar por nome ou telefone" value="${esc(state.clientQuery)}" autocomplete="off"></div>
+    <div id="client-rows" class="client-list"></div></div>`;
+  const draw = () => {
+    const query = state.clientQuery.trim().toLowerCase(); const digits = query.replace(/\D/g, '');
+    const list = clients.filter(client => !query || client.name.toLowerCase().includes(query) || (digits && phoneKey(client.phone).includes(digits)));
+    $('#client-rows').innerHTML = list.length ? list.map(client => `<button class="client-row" data-client="${esc(client.key)}">
+      <span class="client-avatar">${esc(initials(client.name))}</span>
+      <span class="client-main"><b>${esc(client.name)}</b><small>${esc(phoneFmt(client.phone))}</small></span>
+      <span class="client-col"><small>Último agendamento</small><b>${dateFmt(client.last.date)} · ${client.last.time}</b></span>
+      <span class="client-col hide-sm"><small>Atendimentos</small><b>${client.attended.length}<em>/${client.appts.length}</em></b></span>
+      <span class="client-col hide-sm"><small>Total gasto</small><b>${BRL.format(client.spent)}</b></span>
+      <span class="client-arrow">→</span>
+    </button>`).join('') : `<div class="empty-admin">${clients.length ? 'Nenhum cliente encontrado.' : 'Ainda não há clientes. Eles aparecem aqui após o primeiro agendamento.'}</div>`;
+    $$('[data-client]', $('#client-rows')).forEach(button => button.addEventListener('click', () => openClient(button.dataset.client)));
+  };
+  $('#client-search').addEventListener('input', event => { state.clientQuery = event.target.value; draw(); });
+  draw();
+}
+
+function renderClientDetail(root, client) {
+  const today = todayISO();
+  const active = client.appts.filter(item => item.status !== 'no_show');
+  const noShows = client.appts.length - active.length;
+  const upcoming = active.filter(item => item.date >= today && item.status !== 'attended').sort((a, b) => stamp(a).localeCompare(stamp(b)))[0];
+  const lastAttended = client.attended[client.attended.length - 1];
+  const gaps = client.attended.slice(1).map((item, index) => daysBetween(client.attended[index].date, item.date));
+  const avgGap = gaps.length ? Math.round(gaps.reduce((sum, value) => sum + value, 0) / gaps.length) : null;
+  const services = serviceStats(client);
+  const maxCount = Math.max(1, ...services.map(row => row.count));
+  const digits = String(client.phone).replace(/\D/g, ''); const wa = digits.length <= 11 ? `55${digits}` : digits;
+  const metrics = [
+    ['Total gasto', BRL.format(client.spent), `${client.attended.length} ${client.attended.length === 1 ? 'atendimento realizado' : 'atendimentos realizados'}`, true],
+    ['Ticket médio', client.attended.length ? BRL.format(client.spent / client.attended.length) : '—', 'por atendimento'],
+    ['Agendamentos', String(client.appts.length), noShows ? `${noShows} ${noShows === 1 ? 'desistência' : 'desistências'}` : 'nenhuma desistência'],
+    ['Serviço favorito', services[0] ? esc(services[0].name) : '—', services[0] ? `${services[0].count}× agendado` : 'sem histórico'],
+    ['Cliente desde', dateFmt(client.appts[0].date), `${client.appts.length} ${client.appts.length === 1 ? 'registro' : 'registros'}`],
+    ['Última visita', lastAttended ? dateFmt(lastAttended.date) : '—', lastAttended ? `${daysBetween(lastAttended.date, today)} dias atrás` : 'ainda não compareceu'],
+    ['Próximo agendamento', upcoming ? dateFmt(upcoming.date) : '—', upcoming ? `às ${upcoming.time}` : 'nada marcado'],
+    ['Intervalo médio', avgGap === null ? '—' : `${avgGap} dias`, avgGap === null ? 'precisa de 2+ visitas' : 'entre atendimentos']
+  ];
+  const history = client.appts.slice().sort((a, b) => stamp(b).localeCompare(stamp(a)));
+  root.innerHTML = `<div class="panel-card client-head">
+      <button class="mini-btn" data-client-back>← Clientes</button>
+      <div class="client-avatar big">${esc(initials(client.name))}</div>
+      <div class="client-title"><h3>${esc(client.name)}</h3><p>${esc(phoneFmt(client.phone))}</p></div>
+      <a class="mini-btn confirm" href="https://wa.me/${wa}" target="_blank" rel="noopener">WhatsApp ↗</a>
+    </div>
+    <div class="metrics-grid client-metrics">${metrics.map(item => `<div class="metric-card ${item[3] ? 'accent' : ''}"><small>${item[0]}</small><strong>${item[1]}</strong><span>${item[2]}</span></div>`).join('')}</div>
+    <div class="panel-card"><div class="panel-header"><div><h3>ESTATÍSTICAS DOS SERVIÇOS</h3><p>Desistências não entram na contagem · receita considera só atendimentos realizados</p></div></div>
+      ${services.length ? `<table class="data-table"><thead><tr><th>Serviço</th><th>Agendado</th><th>Realizado</th><th>Receita</th><th>Última vez</th><th>Participação</th></tr></thead><tbody>${services.map(row => `<tr><td><b>${esc(row.name)}</b></td><td>${row.count}×</td><td>${row.done}×</td><td>${BRL.format(row.revenue)}</td><td>${row.last ? dateFmt(row.last) : '—'}</td><td><div class="share-bar"><i style="width:${Math.round(row.count / maxCount * 100)}%"></i></div></td></tr>`).join('')}</tbody></table>` : '<div class="empty-admin">Sem serviços registrados.</div>'}
+    </div>
+    <div class="panel-card"><div class="panel-header"><div><h3>AGENDAMENTOS DO CLIENTE</h3><p>${history.length} ${history.length === 1 ? 'registro' : 'registros'} · clique para ver detalhes e ações</p></div></div>${history.map(appointmentCard).join('')}</div>`;
+  $('[data-client-back]', root).addEventListener('click', closeClient);
+  wireAppointmentCards(root);
+}
+
+function openClient(key) {
+  state.clientKey = key; history.pushState(null, '', `#clientes/${encodeURIComponent(key)}`);
+  renderClients(); window.scrollTo({ top: 0 });
+}
+function closeClient() {
+  state.clientKey = null; history.pushState(null, '', '#clientes');
+  renderClients(); window.scrollTo({ top: 0 });
+}
+function navigateAdmin(tab) {
+  if (tab === 'clients') {
+    state.clientKey = null; setAdminTab('clients'); renderClients();
+    if (location.hash !== '#clientes') history.pushState(null, '', '#clientes');
+    return;
+  }
+  if (location.hash.startsWith('#clientes')) history.replaceState(null, '', location.pathname + location.search);
+  setAdminTab(tab);
+}
+function syncClientHash() {
+  const match = location.hash.match(/^#clientes(?:\/(.+))?$/);
+  if (!match) return;
+  state.clientKey = match[1] ? decodeURIComponent(match[1]) : null;
+  setAdminTab('clients'); renderClients();
+}
+
+
+/* ---------- Informações públicas (horários, aberto agora, menu) ---------- */
+const DAY_SHORT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+function hoursGroups() {
+  const order = [1, 2, 3, 4, 5, 6, 0]; const groups = [];
+  order.forEach(day => {
+    const item = state.data.hours.find(hour => hour.day === day); if (!item) return;
+    const value = item.active ? `${item.open} — ${item.close}` : null; const last = groups[groups.length - 1];
+    if (last && last.value === value) last.days.push(day); else groups.push({ days: [day], value });
+  });
+  return groups;
+}
+function renderPublicHours() {
+  const list = $('#footer-hours'); if (!list) return;
+  list.innerHTML = hoursGroups().map(group => {
+    const first = DAY_SHORT[group.days[0]], last = DAY_SHORT[group.days[group.days.length - 1]];
+    const label = group.days.length > 1 ? `${first} — ${last}` : first;
+    return `<li class="${group.value ? '' : 'off'}"><span>${label}</span><b>${group.value || 'Fechado'}</b></li>`;
+  }).join('');
+}
+function renderOpenStatus() {
+  const label = $('#open-status'), dot = $('#open-dot'); if (!label) return;
+  const now = new Date(); const minutes = now.getHours() * 60 + now.getMinutes();
+  const item = state.data.hours.find(hour => hour.day === now.getDay());
+  const toMin = value => { const [h, m] = value.split(':').map(Number); return h * 60 + m; };
+  let text = 'Fechado hoje', kind = 'closed';
+  if (item && item.active) {
+    if (minutes >= toMin(item.open) && minutes < toMin(item.close)) { text = `Aberto agora · fecha às ${item.close}`; kind = 'open'; }
+    else if (minutes < toMin(item.open)) { text = `Abre hoje às ${item.open}`; kind = 'closed'; }
+    else { text = 'Fechado agora'; kind = 'closed'; }
+  }
+  label.textContent = text; dot.className = `dot ${kind}`;
+}
+function wireNavHighlight() {
+  const links = $$('.site-header .nav-link'); const sections = ['trabalho', 'booking', 'avaliacoes', 'contato'].map(id => document.getElementById(id));
+  if (!('IntersectionObserver' in window)) return;
+  const observer = new IntersectionObserver(entries => entries.forEach(entry => {
+    if (entry.isIntersecting) links.forEach(link => link.classList.toggle('active', link.getAttribute('href') === `#${entry.target.id}`));
+  }), { rootMargin: '-45% 0px -50% 0px' });
+  sections.forEach(section => section && observer.observe(section));
+  const top = document.getElementById('inicio');
+  if (top) new IntersectionObserver(entries => entries.forEach(entry => { if (entry.isIntersecting) links.forEach(link => link.classList.remove('active')); }), { rootMargin: '-45% 0px -50% 0px' }).observe(top);
+}
+function renderPublicInfo() {
+  renderPublicHours(); renderOpenStatus(); wireNavHighlight();
+  const year = $('#year'); if (year) year.textContent = new Date().getFullYear();
+}
+
 function renderAdmin() {
-  renderDashboard(); renderAgenda(); renderServiceAdmin(); renderHours();
+  renderDashboard(); renderAgenda(); renderClients(); renderServiceAdmin(); renderHours();
 }
 function setAdminTab(tab) {
-  const titles = { dashboard: 'VISÃO GERAL', agenda: 'AGENDAMENTOS', services: 'SERVIÇOS', hours: 'HORÁRIOS' };
+  const titles = { dashboard: 'VISÃO GERAL', agenda: 'AGENDAMENTOS', clients: 'CLIENTES', services: 'SERVIÇOS', hours: 'HORÁRIOS' };
   $$('.admin-nav').forEach(button => button.classList.toggle('active', button.dataset.adminTab === tab));
   $$('.admin-panel').forEach(panel => panel.classList.toggle('hidden', panel.id !== `admin-${tab}`));
   $('#admin-title').textContent = titles[tab];
@@ -270,16 +445,17 @@ async function reloadState() { state.data = await api('/api/state'); }
 async function init() {
   try {
     await reloadState();
-    if (Store.mode === 'local') setTimeout(() => toast('Modo local: dados salvos só neste navegador (Firestore indisponível).'), 600);
     const adminMode = document.body.classList.contains('admin-page');
     if (adminMode) {
+      if (Store.mode === 'local') setTimeout(() => toast('Modo local: dados salvos só neste navegador (Firestore indisponível).'), 600);
       renderAdmin();
-      $$('.admin-nav').forEach(button => button.addEventListener('click', () => setAdminTab(button.dataset.adminTab)));
+      $$('.admin-nav').forEach(button => button.addEventListener('click', () => navigateAdmin(button.dataset.adminTab)));
       $('#reschedule-date').addEventListener('change', () => { state.rescheduleTime = ''; $('#save-reschedule').disabled = true; loadRescheduleSlots(); });
       $('#save-reschedule').addEventListener('click', saveReschedule);
       $$('.dialog-close').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
+      window.addEventListener('hashchange', syncClientHash); syncClientHash();
     } else {
-      state.date = todayISO(); renderServices(); updateSummary(); wirePublic();
+      state.date = todayISO(); renderServices(); updateSummary(); wirePublic(); renderPublicInfo();
     }
   } catch (error) { document.body.innerHTML = `<main style="padding:40px"><h1>Não foi possível iniciar</h1><p>${error.message}</p></main>`; }
 }

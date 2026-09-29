@@ -3,45 +3,80 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#11100e">
-  <title>Willzinho Barber — Agendamento</title>
+  <meta name="theme-color" content="#12110f">
+  <title>Willzinho Barber — Barbearia em Colombo, PR | Agende online</title>
+  <meta name="description" content="Willzinho Barber: corte, barba e acabamento em Colombo, PR. Escolha o serviço, veja os horários livres e agende online com confirmação pelo WhatsApp.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Willzinho Barber — Agende seu horário">
+  <meta property="og:description" content="Corte, barba e acabamento em Colombo, PR. Agendamento online em poucos passos.">
+  <meta property="og:image" content="assets/logo-willzinho.jpeg">
+  <link rel="icon" href="assets/logo-willzinho.jpeg">
   <link rel="stylesheet" href="styles.css">
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@type":"BarberShop","name":"Willzinho Barber","image":"assets/logo-willzinho.jpeg","telephone":"+55 41 99990-1208","sameAs":["https://www.instagram.com/willzinhobaarber_/"],"address":{"@type":"PostalAddress","streetAddress":"R. Paschoa Lazarotto Toniolo, 9","addressLocality":"Colombo","addressRegion":"PR","postalCode":"83405-000","addressCountry":"BR"}}
+  </script>
 </head>
-<body>
+<body class="site">
   <div class="noise"></div>
-  <header class="topbar">
-    <a class="brand" href="./" aria-label="Ir para início">
+
+  <header class="topbar site-header">
+    <a class="brand" href="#inicio" aria-label="Willzinho Barber — ir para o início">
       <img class="brand-logo" src="assets/logo-willzinho.jpeg" alt="Willzinho Barber">
-      <span><b>WILLZINHO BARBER</b><small>AGENDE. CHEGUE. RENOVE.</small></span>
+      <span><b>WILLZINHO BARBER</b><small>BARBEARIA · COLOMBO — PR</small></span>
     </a>
     <nav aria-label="Navegação principal">
-      <a class="nav-link active" href="#booking">Agendar</a>
+      <a class="nav-link" href="#trabalho">Trabalho</a>
+      <a class="nav-link" href="#booking">Agendar</a>
+      <a class="nav-link" href="#avaliacoes">Avaliações</a>
+      <a class="nav-link" href="#contato">Contato</a>
     </nav>
-    <button class="outline-btn desktop-only" data-scroll="booking">Reservar horário <span>↗</span></button>
+    <a class="primary-btn small topbar-cta" href="#booking">Agendar <span>→</span></a>
   </header>
 
   <main id="public-view">
-    <section class="hero">
-      <div class="hero-copy reveal">
-        <p class="eyebrow"><span></span> Seu estilo, no horário certo</p>
-        <h1>PRECISÃO<br><em>EM CADA</em><br>CORTE.</h1>
-        <p class="hero-text">Escolha seu serviço, encontre um horário livre e confirme em poucos passos.</p>
-        <button class="primary-btn" data-scroll="booking">Agendar agora <span>→</span></button>
+    <!-- 1. TOPO -->
+    <section class="home-hero" id="inicio">
+      <img class="hero-watermark" src="assets/logo-willzinho.jpeg" alt="" aria-hidden="true">
+      <div class="hero-inner reveal">
+        <p class="eyebrow center"><span></span> Barbearia em Colombo, PR <span></span></p>
+        <h1>PRECISÃO<em>em cada</em>CORTE.</h1>
+        <p class="hero-sub">Corte, barba e acabamento com hora marcada. Escolha o serviço, veja os horários livres em tempo real e confirme em poucos passos.</p>
+        <div class="hero-actions">
+          <a class="primary-btn" href="#booking">Agendar horário <span>→</span></a>
+          <a class="outline-btn" href="#trabalho">Ver o trabalho</a>
+        </div>
       </div>
-      <div class="hero-art reveal delay-1" aria-label="Logotipo Willzinho Barber">
-        <img class="hero-logo" src="assets/logo-willzinho.jpeg" alt="Willzinho Barber">
-        <div class="stamp">DESDE<br>2020</div>
-        <p>TRADIÇÃO <span>×</span> ATITUDE</p>
-      </div>
-      <div class="hero-meta reveal delay-2">
-        <div><small>HORÁRIOS</small><b>SEG — SÁB</b><span>10:00 — 20:00</span></div>
-        <div><small>DOMINGO</small><b>HORÁRIO ESPECIAL</b><span>10:00 — 13:00</span></div>
+      <div class="hero-facts reveal delay-2">
+        <div><i class="dot" id="open-dot"></i><span><small>Hoje</small><b id="open-status">Consulte os horários</b></span></div>
+        <div><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span><small>Onde estamos</small><b>Rio Verde, Colombo — PR</b></span></div>
+        <div><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span><small>Agendamento</small><b>Online, com confirmação no WhatsApp</b></span></div>
       </div>
     </section>
 
+    <!-- 2. O TRABALHO -->
+    <section class="work" id="trabalho">
+      <div class="sec-head">
+        <p class="eyebrow center"><span></span> Portfólio <span></span></p>
+        <h2>UM POUCO DO <em>nosso trabalho</em></h2>
+        <p>Cada atendimento é pensado no detalhe, da conversa inicial ao acabamento final. Veja alguns resultados e acompanhe mais no Instagram.</p>
+      </div>
+      <div class="work-grid">
+        <figure class="work-tile t1"><span class="work-fallback">CORTE</span><img src="assets/trabalhos/trabalho-1.jpg" alt="Corte realizado na Willzinho Barber" loading="lazy" onerror="this.remove()"></figure>
+        <figure class="work-tile t2"><span class="work-fallback">BARBA</span><img src="assets/trabalhos/trabalho-2.jpg" alt="Barba feita na Willzinho Barber" loading="lazy" onerror="this.remove()"></figure>
+        <figure class="work-tile t3"><span class="work-fallback">COMBO</span><img src="assets/trabalhos/trabalho-3.jpg" alt="Corte e barba na Willzinho Barber" loading="lazy" onerror="this.remove()"></figure>
+        <figure class="work-tile t4"><span class="work-fallback">ACABAMENTO</span><img src="assets/trabalhos/trabalho-4.jpg" alt="Acabamento na Willzinho Barber" loading="lazy" onerror="this.remove()"></figure>
+        <figure class="work-tile t5"><span class="work-fallback">PLATINADO</span><img src="assets/trabalhos/trabalho-5.jpg" alt="Platinado feito na Willzinho Barber" loading="lazy" onerror="this.remove()"></figure>
+        <figure class="work-tile t6"><span class="work-fallback">PROGRESSIVA</span><img src="assets/trabalhos/trabalho-6.jpg" alt="Progressiva feita na Willzinho Barber" loading="lazy" onerror="this.remove()"></figure>
+      </div>
+      <div class="center-row">
+        <a class="outline-btn" href="https://www.instagram.com/willzinhobaarber_/" target="_blank" rel="noopener">Ver mais no Instagram @willzinhobaarber_ <span>↗</span></a>
+      </div>
+    </section>
+
+    <!-- 3. AGENDAMENTO -->
     <section class="booking-section" id="booking">
       <div class="section-heading">
-        <p class="eyebrow"><span></span> Agendamento online</p>
+        <p class="eyebrow center"><span></span> Agendamento online <span></span></p>
         <h2>MONTE SEU<br><em>ATENDIMENTO</em></h2>
         <p>Primeiro selecione os serviços. Assim mostramos apenas os horários em que o atendimento completo cabe na agenda.</p>
       </div>
@@ -81,7 +116,70 @@
         </aside>
       </div>
     </section>
+
+    <!-- 4. AVALIAÇÕES -->
+    <section class="reviews" id="avaliacoes">
+      <div class="sec-head">
+        <p class="eyebrow center"><span></span> Avaliações <span></span></p>
+        <h2>O QUE DIZEM <em>os clientes</em></h2>
+        <p>A opinião de quem já sentou na cadeira.</p>
+      </div>
+      <!-- IMPORTANTE: os 3 depoimentos abaixo são EXEMPLOS. Troque pelo texto e nome de clientes reais antes de divulgar o site. -->
+      <div class="review-grid">
+        <blockquote class="review-card">
+          <div class="stars" aria-label="5 de 5 estrelas">★★★★★</div>
+          <p>Corte muito bem feito e no horário marcado. Agendar pelo site é rápido e a confirmação vem direto no WhatsApp.</p>
+          <footer><span class="client-avatar">TS</span><span><b>Thiago S.</b><small>Cliente</small></span></footer>
+        </blockquote>
+        <blockquote class="review-card">
+          <div class="stars" aria-label="5 de 5 estrelas">★★★★★</div>
+          <p>Ambiente tranquilo, atendimento atencioso e acabamento impecável. Já virou meu lugar de sempre.</p>
+          <footer><span class="client-avatar">MP</span><span><b>Marcos P.</b><small>Cliente</small></span></footer>
+        </blockquote>
+        <blockquote class="review-card">
+          <div class="stars" aria-label="5 de 5 estrelas">★★★★★</div>
+          <p>Fiz o combo de corte e barba e saí satisfeito. Recomendo para quem quer capricho no detalhe.</p>
+          <footer><span class="client-avatar">DA</span><span><b>Diego A.</b><small>Cliente</small></span></footer>
+        </blockquote>
+      </div>
+      <div class="center-row">
+        <a class="outline-btn" href="https://maps.google.com/maps?vet=10CAAQoqAOahcKEwior5-uwpKXAxUAAAAAHQAAAAAQDA..i&fvr=1&pvq=Cg0vZy8xMWZuNHgxNWxy&cs=1&um=1&ie=UTF-8&fb=1&gl=br&sa=X&ftid=0x94dce9980e240f41:0x1566bbbe915028ed" target="_blank" rel="noopener">Ver avaliações no Google <span>↗</span></a>
+      </div>
+    </section>
   </main>
+
+  <!-- 5. RODAPÉ -->
+  <footer class="site-footer" id="contato">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <img class="brand-logo" src="assets/logo-willzinho.jpeg" alt="Willzinho Barber">
+        <b>WILLZINHO BARBER</b>
+        <p>Corte, barba e estilo em Colombo — PR. Agende online e chegue na hora certa.</p>
+        <a class="primary-btn small" href="#booking">Agendar horário <span>→</span></a>
+      </div>
+
+      <div class="footer-col">
+        <h4>Contato</h4>
+        <a class="footer-link" href="https://wa.me/5541999901208" target="_blank" rel="noopener"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg><span><small>WhatsApp</small>(41) 99990-1208</span></a>
+        <a class="footer-link" href="https://www.instagram.com/willzinhobaarber_/" target="_blank" rel="noopener"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><path d="M17.5 6.5h.01"/></svg><span><small>Instagram</small>@willzinhobaarber_</span></a>
+      </div>
+
+      <div class="footer-col">
+        <h4>Endereço</h4>
+        <address class="footer-link static"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>R. Paschoa Lazarotto Toniolo, 9<br>Rio Verde, Colombo — PR<br>CEP 83405-000</span></address>
+        <a class="outline-btn small" href="https://maps.google.com/maps?vet=10CAAQoqAOahcKEwior5-uwpKXAxUAAAAAHQAAAAAQDA..i&fvr=1&pvq=Cg0vZy8xMWZuNHgxNWxy&cs=1&um=1&ie=UTF-8&fb=1&gl=br&sa=X&ftid=0x94dce9980e240f41:0x1566bbbe915028ed" target="_blank" rel="noopener">Como chegar <span>↗</span></a>
+      </div>
+
+      <div class="footer-col">
+        <h4>Horários</h4>
+        <ul class="hours-list" id="footer-hours">
+          <li><span>Seg — Sáb</span><b>10:00 — 20:00</b></li>
+          <li><span>Dom</span><b>10:00 — 13:00</b></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom"><span>© <span id="year">2026</span> Willzinho Barber. Todos os direitos reservados.</span><span>Colombo — PR</span></div>
+  </footer>
 
   <dialog id="message-dialog" class="app-dialog">
     <button class="dialog-close" aria-label="Fechar">×</button>
