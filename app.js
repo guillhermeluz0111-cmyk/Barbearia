@@ -37,6 +37,7 @@ function totals() {
 const prodLine = item => (item.products && item.products.length) ? `\nProdutos: ${item.products.map(p => p.name).join(' + ')}` : '';
 
 function renderServices() {
+  if (!state.data.services.length) { $('#service-grid').innerHTML = '<p class="empty-note">Nenhum serviço disponível no momento. Volte em breve.</p>'; return; }
   $('#service-grid').innerHTML = state.data.services.map(item => {
     const ready = item.active && item.price !== null && item.duration !== null;
     return `<button type="button" class="service-card ${state.selected.includes(item.id) ? 'selected' : ''} ${ready ? '' : 'unavailable'}" data-service="${esc(item.id)}" ${ready ? '' : 'disabled'}>
@@ -64,11 +65,7 @@ function renderProducts() {
 }
 
 function toggleService(id) {
-  if (id === 'combo') state.selected = state.selected.includes(id) ? [] : [...state.selected.filter(value => !['corte', 'barba', 'sobrancelha'].includes(value)), id];
-  else {
-    state.selected = state.selected.filter(value => value !== 'combo');
-    state.selected = state.selected.includes(id) ? state.selected.filter(value => value !== id) : [...state.selected, id];
-  }
+  state.selected = state.selected.includes(id) ? state.selected.filter(value => value !== id) : [...state.selected, id];
   state.time = '';
   renderServices(); updateSummary();
 }
@@ -213,7 +210,7 @@ function reminderMessage(item) {
 }
 function showMessage(phone, message) {
   $('#message-preview').value = message;
-  $('#open-whatsapp').onclick = () => window.open(`https://wa.me/${String(phone).replace(/\D/g, '')}?text=${encodeURIComponent($('#message-preview').value)}`, '_blank', 'noopener');
+  $('#open-whatsapp').onclick = () => window.open(`https://wa.me/${waNumber(phone)}?text=${encodeURIComponent($('#message-preview').value)}`, '_blank', 'noopener');
   $('#message-dialog').showModal();
 }
 
@@ -370,20 +367,118 @@ function renderServiceAdmin() {
   const root = $('#admin-services');
   const products = state.data.products || [];
   const margin = item => (item.price !== null && item.cost !== null && item.cost !== undefined) ? BRL.format(item.price - item.cost) : '—';
-  root.innerHTML = `<div class="panel-card"><div class="panel-header"><div><h3>CATÁLOGO DE SERVIÇOS</h3><p>As alterações refletem no site público</p></div><button class="primary-btn small" id="add-item">Adicionar <span>+</span></button></div>
-    <table class="data-table"><thead><tr><th>Serviço</th><th>Preço (R$)</th><th>Duração (min)</th><th>Visível</th><th></th></tr></thead><tbody>${state.data.services.map(item => `<tr data-service-row="${esc(item.id)}"><td><input data-field="name" value="${esc(item.name)}"></td><td><input data-field="price" type="number" min="0" step="0.01" value="${item.price ?? ''}" placeholder="A definir"></td><td><input data-field="duration" type="number" min="5" step="5" value="${item.duration ?? ''}" placeholder="A definir"></td><td><button class="toggle ${item.active ? 'on' : ''}" data-field="active" aria-label="Ativar ou desativar"></button></td><td><button class="mini-btn" data-save-service>Salvar</button></td></tr>`).join('')}</tbody></table></div>
+  root.innerHTML = `${planConfigCard()}<div class="panel-card"><div class="panel-header"><div><h3>CATÁLOGO DE SERVIÇOS</h3><p>As alterações refletem no site público</p></div><button class="primary-btn small" id="add-item">Adicionar <span>+</span></button></div>
+    ${state.data.services.length ? `<table class="data-table"><thead><tr><th>Serviço</th><th>Preço (R$)</th><th>Custo (R$)</th><th>Lucro</th><th>Duração (min)</th><th>Visível</th><th></th></tr></thead><tbody>${state.data.services.map(item => `<tr data-service-row="${esc(item.id)}"><td><input data-field="name" value="${esc(item.name)}"></td><td><input data-field="price" type="number" min="0" step="0.01" value="${item.price ?? ''}" placeholder="A definir"></td><td><input data-field="cost" type="number" min="0" step="0.01" value="${item.cost ?? ''}" placeholder="Opcional"></td><td><b>${margin(item)}</b></td><td><input data-field="duration" type="number" min="5" step="5" value="${item.duration ?? ''}" placeholder="A definir"></td><td><button class="toggle ${item.active ? 'on' : ''}" data-field="active" aria-label="Ativar ou desativar"></button></td><td class="row-actions"><button class="mini-btn" data-save-service>Salvar</button><button class="mini-btn danger" data-delete-service>Apagar</button></td></tr>`).join('')}</tbody></table>` : '<div class="empty-admin">Nenhum serviço cadastrado. Use “Adicionar” para criar o primeiro.</div>'}</div>
     <div class="panel-card"><div class="panel-header"><div><h3>CATÁLOGO DE PRODUTOS</h3><p>Aparecem como complementos na etapa 3 do agendamento · o custo só aparece aqui no painel</p></div></div>
-    ${products.length ? `<table class="data-table"><thead><tr><th>Produto</th><th>Custo (R$)</th><th>Venda (R$)</th><th>Lucro</th><th>Descrição</th><th>Visível</th><th></th></tr></thead><tbody>${products.map(item => `<tr data-product-row="${esc(item.id)}"><td><input data-field="name" value="${esc(item.name)}"></td><td><input data-field="cost" type="number" min="0" step="0.01" value="${item.cost ?? ''}"></td><td><input data-field="price" type="number" min="0" step="0.01" value="${item.price ?? ''}"></td><td><b>${margin(item)}</b></td><td><input data-field="description" value="${esc(item.description || '')}"></td><td><button class="toggle ${item.active ? 'on' : ''}" data-field="active" aria-label="Ativar ou desativar"></button></td><td><button class="mini-btn" data-save-product>Salvar</button></td></tr>`).join('')}</tbody></table>` : '<div class="empty-admin">Nenhum produto cadastrado. Use “Adicionar” para criar o primeiro.</div>'}
+    ${products.length ? `<table class="data-table"><thead><tr><th>Produto</th><th>Custo (R$)</th><th>Venda (R$)</th><th>Lucro</th><th>Qtd.</th><th>Descrição</th><th>Visível</th><th></th></tr></thead><tbody>${products.map(item => `<tr data-product-row="${esc(item.id)}"><td><input data-field="name" value="${esc(item.name)}"></td><td><input data-field="cost" type="number" min="0" step="0.01" value="${item.cost ?? ''}"></td><td><input data-field="price" type="number" min="0" step="0.01" value="${item.price ?? ''}"></td><td><b>${margin(item)}</b></td><td><input data-field="quantity" type="number" min="0" step="1" value="${item.quantity ?? ''}" placeholder="0"></td><td><input data-field="description" value="${esc(item.description || '')}"></td><td><button class="toggle ${item.active ? 'on' : ''}" data-field="active" aria-label="Ativar ou desativar"></button></td><td class="row-actions"><button class="mini-btn" data-save-product>Salvar</button><button class="mini-btn danger" data-delete-product>Apagar</button></td></tr>`).join('')}</tbody></table>` : '<div class="empty-admin">Nenhum produto cadastrado. Use “Adicionar” para criar o primeiro.</div>'}
     </div>`;
   $$('[data-field="active"]', root).forEach(button => button.addEventListener('click', () => button.classList.toggle('on')));
   $$('[data-save-service]', root).forEach(button => button.addEventListener('click', () => saveService(button.closest('tr'))));
   $$('[data-save-product]', root).forEach(button => button.addEventListener('click', () => saveProduct(button.closest('tr'))));
+  $$('[data-delete-service]', root).forEach(button => button.addEventListener('click', () => deleteItem('services', button.closest('tr'))));
+  $$('[data-delete-product]', root).forEach(button => button.addEventListener('click', () => deleteItem('products', button.closest('tr'))));
   $('#add-item').addEventListener('click', openItemDialog);
+  wirePlanConfig(root);
+}
+
+/* ---------- Plano mensal: configuração (aba Serviços) ---------- */
+const planOf = () => (state.data.config && state.data.config.monthlyPlan) || { enabled: false, name: 'Plano Mensal', description: '', monthlyValue: 0, includedCuts: 4, extraCutValue: 0, dependentValue: 0, maxDependents: 3 };
+const planTotal = (plan, deps, cuts) => plan.monthlyValue + deps * plan.dependentValue + Math.max(0, cuts - plan.includedCuts) * plan.extraCutValue;
+function planConfigCard() {
+  const p = planOf();
+  return `<div class="panel-card plan-config" id="plan-config">
+    <div class="panel-header"><div><h3>PLANO MENSAL</h3><p>Define o box de plano exibido abaixo do agendamento no site · o cliente personaliza dependentes e cortes</p></div>
+      <label class="pc-switch"><span>Mostrar no site</span><button type="button" class="toggle ${p.enabled ? 'on' : ''}" id="pc-enabled" aria-label="Mostrar plano no site"></button></label></div>
+    <div class="pc-grid">
+      <label class="reset-label">Nome do plano<input id="pc-name" autocomplete="off" maxlength="60" value="${esc(p.name)}" placeholder="Plano Mensal"></label>
+      <label class="reset-label">Valor mensal (R$)<input id="pc-monthly" type="number" min="0" step="0.01" inputmode="decimal" value="${p.monthlyValue || ''}" placeholder="0,00"></label>
+      <label class="reset-label">Quantidade mínima de cortes no mês<input id="pc-cuts" type="number" min="1" step="1" inputmode="numeric" value="${p.includedCuts}" placeholder="4"></label>
+      <label class="reset-label">Valor de cada corte adicional (R$)<input id="pc-extra" type="number" min="0" step="0.01" inputmode="decimal" value="${p.extraCutValue || ''}" placeholder="0,00"></label>
+      <label class="reset-label">Valor adicional por dependente (R$)<input id="pc-dep" type="number" min="0" step="0.01" inputmode="decimal" value="${p.dependentValue || ''}" placeholder="0,00"></label>
+      <label class="reset-label">Máximo de dependentes<input id="pc-maxdep" type="number" min="0" step="1" inputmode="numeric" value="${p.maxDependents}" placeholder="3"></label>
+      <label class="reset-label pc-wide">Descrição (opcional)<input id="pc-desc" autocomplete="off" maxlength="200" value="${esc(p.description)}" placeholder="Ex.: Corte ilimitado na semana, atendimento prioritário…"></label>
+    </div>
+    <p class="pc-preview" id="pc-preview"></p>
+    <button class="primary-btn small" id="pc-save">Salvar plano</button>
+  </div>`;
+}
+function readPlanForm() {
+  return { enabled: $('#pc-enabled').classList.contains('on'), name: $('#pc-name').value, description: $('#pc-desc').value, monthlyValue: $('#pc-monthly').value,
+    includedCuts: $('#pc-cuts').value, extraCutValue: $('#pc-extra').value, dependentValue: $('#pc-dep').value, maxDependents: $('#pc-maxdep').value };
+}
+function wirePlanConfig(root) {
+  const n = v => Number(v) || 0;
+  const preview = () => {
+    const f = readPlanForm(); const plan = { monthlyValue: n(f.monthlyValue), includedCuts: Math.max(1, n(f.includedCuts)), extraCutValue: n(f.extraCutValue), dependentValue: n(f.dependentValue) };
+    const deps = Math.min(1, n(f.maxDependents)), cuts = plan.includedCuts + 2;
+    $('#pc-preview').innerHTML = `Exemplo: <b>${deps} dependente</b> e <b>${cuts} cortes no mês</b> (${cuts - plan.includedCuts} acima do mínimo) = <b>${BRL.format(planTotal(plan, deps, cuts))}</b>/mês`;
+  };
+  $('#pc-enabled', root).addEventListener('click', event => event.currentTarget.classList.toggle('on'));
+  $$('#plan-config input', root).forEach(input => input.addEventListener('input', preview)); preview();
+  $('#pc-save', root).addEventListener('click', async event => {
+    const button = event.currentTarget; button.disabled = true;
+    try { await api('/api/plan-config', { method: 'PUT', body: JSON.stringify(readPlanForm()) }); await reloadState(); renderServiceAdmin(); toast('Plano mensal salvo.'); }
+    catch (error) { toast(error.message); button.disabled = false; }
+  });
+}
+
+/* ---------- Plano mensal: box público (abaixo do agendamento) ---------- */
+const planPick = { deps: 0, cuts: null };
+function renderPlanBox() {
+  const wrap = $('#plan-wrap'); if (!wrap) return;
+  const plan = planOf(); const link = $('#nav-plano');
+  const visible = plan.enabled && plan.monthlyValue > 0;
+  wrap.hidden = !visible; if (link) link.style.display = visible ? '' : 'none';
+  if (!visible) return;
+  planPick.cuts = Math.max(plan.includedCuts, Math.min(planPick.cuts ?? plan.includedCuts, 60));
+  planPick.deps = Math.max(0, Math.min(planPick.deps, plan.maxDependents));
+  const extraCuts = planPick.cuts - plan.includedCuts;
+  const depsCost = planPick.deps * plan.dependentValue, extraCost = extraCuts * plan.extraCutValue;
+  const total = planTotal(plan, planPick.deps, planPick.cuts);
+  const stepper = (key, value, min, max) => `<div class="stepper"><button type="button" data-plan-step="${key}" data-dir="-1" aria-label="Diminuir" ${value <= min ? 'disabled' : ''}>−</button><b>${value}</b><button type="button" data-plan-step="${key}" data-dir="1" aria-label="Aumentar" ${value >= max ? 'disabled' : ''}>+</button></div>`;
+  $('#plan-box').innerHTML = `<div class="plan-info">
+      <p class="summary-kicker">PLANO MENSAL</p>
+      <h3>${esc(plan.name)}</h3>
+      ${plan.description ? `<p class="plan-desc">${esc(plan.description)}</p>` : ''}
+      <div class="plan-from"><small>A partir de</small><strong>${BRL.format(plan.monthlyValue)}</strong><span>/mês</span></div>
+      <ul class="plan-perks">
+        <li><i>✓</i>${plan.includedCuts} ${plan.includedCuts === 1 ? 'corte incluso' : 'cortes inclusos'} por mês</li>
+        <li><i>✓</i>${plan.extraCutValue > 0 ? `Corte adicional: + ${BRL.format(plan.extraCutValue)} cada` : 'Cortes adicionais sem custo extra'}</li>
+        ${plan.maxDependents > 0 ? `<li><i>✓</i>${plan.dependentValue > 0 ? `Dependente: + ${BRL.format(plan.dependentValue)} por mês` : 'Dependentes sem custo extra'} (até ${plan.maxDependents})</li>` : ''}
+      </ul>
+    </div>
+    <div class="plan-build">
+      <h4>Monte o seu plano</h4>
+      <div class="plan-row"><div><b>Cortes por mês</b><small>Mínimo de ${plan.includedCuts}</small></div>${stepper('cuts', planPick.cuts, plan.includedCuts, 60)}</div>
+      ${plan.maxDependents > 0 ? `<div class="plan-row"><div><b>Dependentes</b><small>Filho, irmão, pai… até ${plan.maxDependents}</small></div>${stepper('deps', planPick.deps, 0, plan.maxDependents)}</div>` : ''}
+      <div class="plan-lines">
+        <div><span>Plano base (${plan.includedCuts} ${plan.includedCuts === 1 ? 'corte' : 'cortes'})</span><b>${BRL.format(plan.monthlyValue)}</b></div>
+        ${planPick.deps ? `<div><span>${planPick.deps} ${planPick.deps === 1 ? 'dependente' : 'dependentes'}</span><b>${BRL.format(depsCost)}</b></div>` : ''}
+        ${extraCuts ? `<div><span>${extraCuts} ${extraCuts === 1 ? 'corte adicional' : 'cortes adicionais'}</span><b>${BRL.format(extraCost)}</b></div>` : ''}
+      </div>
+      <div class="plan-total"><span>Total por mês</span><strong>${BRL.format(total)}</strong></div>
+      <button type="button" class="primary-btn full" id="plan-interest">Quero este plano <span>→</span></button>
+    </div>`;
+  $$('[data-plan-step]').forEach(button => button.addEventListener('click', () => {
+    planPick[button.dataset.planStep] += Number(button.dataset.dir); renderPlanBox();
+  }));
+  $('#plan-interest').addEventListener('click', () => showMessage(state.data.config.whatsapp,
+    `Olá! Tenho interesse no ${plan.name}.\n\nCortes por mês: ${planPick.cuts}${extraCuts ? ` (${extraCuts} acima do mínimo de ${plan.includedCuts})` : ''}\nDependentes: ${planPick.deps}\nValor mensal: ${BRL.format(total)}\n\nPode me passar mais informações?`));
+}
+
+/* Apagar serviço ou produto do catálogo (agendamentos antigos mantêm o registro do que foi feito) */
+async function deleteItem(kind, row) {
+  const id = kind === 'services' ? row.dataset.serviceRow : row.dataset.productRow;
+  const name = $('[data-field="name"]', row).value.trim() || 'este item';
+  const label = kind === 'services' ? 'serviço' : 'produto';
+  if (!confirm(`Apagar o ${label} “${name}”?\n\nEle some do site e do catálogo. Agendamentos já feitos continuam com o registro.`)) return;
+  try { await api(`/api/${kind}/${encodeURIComponent(id)}`, { method: 'DELETE' }); await reloadState(); renderServiceAdmin(); toast(kind === 'services' ? 'Serviço apagado.' : 'Produto apagado.'); }
+  catch (error) { toast(error.message); }
 }
 
 async function saveProduct(row) {
   const payload = {
-    name: $('[data-field="name"]', row).value, cost: $('[data-field="cost"]', row).value, price: $('[data-field="price"]', row).value,
+    name: $('[data-field="name"]', row).value, cost: $('[data-field="cost"]', row).value, price: $('[data-field="price"]', row).value, quantity: $('[data-field="quantity"]', row).value,
     description: $('[data-field="description"]', row).value, active: $('[data-field="active"]', row).classList.contains('on')
   };
   try { await api(`/api/products/${row.dataset.productRow}`, { method: 'PUT', body: JSON.stringify(payload) }); await reloadState(); renderServiceAdmin(); toast('Produto atualizado.'); }
@@ -399,7 +494,7 @@ function setItemType(type) {
   $('#item-save').textContent = type === 'service' ? 'Adicionar serviço' : 'Adicionar produto';
 }
 function openItemDialog() {
-  ['#new-service-name', '#new-service-price', '#new-product-name', '#new-product-cost', '#new-product-price', '#new-product-desc'].forEach(selector => { $(selector).value = ''; });
+  ['#new-service-name', '#new-service-price', '#new-service-cost', '#new-product-quantity', '#new-product-name', '#new-product-cost', '#new-product-price', '#new-product-desc'].forEach(selector => { $(selector).value = ''; });
   $('#new-service-duration').value = '30';
   setItemType('service'); $('#item-dialog').showModal();
 }
@@ -407,10 +502,10 @@ async function saveNewItem() {
   const button = $('#item-save'); button.disabled = true;
   try {
     if (itemDialog.type === 'service') {
-      await api('/api/services', { method: 'POST', body: JSON.stringify({ name: $('#new-service-name').value, price: $('#new-service-price').value, duration: $('#new-service-duration').value, active: true }) });
+      await api('/api/services', { method: 'POST', body: JSON.stringify({ name: $('#new-service-name').value, price: $('#new-service-price').value, cost: $('#new-service-cost').value, duration: $('#new-service-duration').value, active: true }) });
       toast('Serviço adicionado.');
     } else {
-      await api('/api/products', { method: 'POST', body: JSON.stringify({ name: $('#new-product-name').value, cost: $('#new-product-cost').value, price: $('#new-product-price').value, description: $('#new-product-desc').value, active: true }) });
+      await api('/api/products', { method: 'POST', body: JSON.stringify({ name: $('#new-product-name').value, cost: $('#new-product-cost').value, price: $('#new-product-price').value, quantity: $('#new-product-quantity').value, description: $('#new-product-desc').value, active: true }) });
       toast('Produto adicionado.');
     }
     $('#item-dialog').close(); await reloadState(); renderServiceAdmin();
@@ -487,6 +582,7 @@ async function saveService(row) {
   const payload = {
     name: $('[data-field="name"]', row).value,
     price: $('[data-field="price"]', row).value,
+    cost: $('[data-field="cost"]', row).value,
     duration: $('[data-field="duration"]', row).value,
     active: $('[data-field="active"]', row).classList.contains('on')
   };
@@ -676,6 +772,7 @@ function renderPlans() {
           ${history.length ? history.map(cut => `<div class="cut-line"><span>${dateFmt(cut.date)}</span><b>${cut.dependentName ? `Dependente: ${esc(cut.dependentName)}` : 'Titular'}</b><button class="mini-btn danger" data-plan-action="remove-cut" data-cut="${esc(cut.id)}">Remover</button></div>`).join('') : '<p class="muted">Nenhum corte registrado ainda.</p>'}</div>
         <div class="action-row">
           <button class="mini-btn confirm" data-plan-action="cut" ${plan.active === false ? 'disabled' : ''}>Registrar corte</button>
+          <button class="mini-btn" data-plan-action="send">Enviar no WhatsApp</button>
           <button class="mini-btn" data-plan-action="edit">Editar plano</button>
           <button class="mini-btn ${plan.active === false ? '' : 'danger'}" data-plan-action="toggle">${plan.active === false ? 'Reativar' : 'Desativar'}</button>
         </div>
@@ -699,7 +796,14 @@ function planAction(key, action, cutId) {
   if (action === 'edit') return openPlanDialog(client);
   if (action === 'cut') return openCutDialog(client);
   if (action === 'toggle') return togglePlan(client);
+  if (action === 'send') return showMessage(client.phone, planMessage(client));
   if (action === 'remove-cut') return removeCut(client, cutId);
+}
+
+function planMessage(client) {
+  const plan = client.plan; const business = (state.data.config && state.data.config.businessName) || 'nossa barbearia';
+  const deps = plan.dependents || [];
+  return `Olá, ${client.name.split(' ')[0]}! Seu plano mensal na ${business} está cadastrado.\n\nPlano mensal: ${BRL.format(plan.monthlyValue || 0)}\nValor do plano: ${BRL.format(plan.planValue || 0)}\nCortes por mês: ${plan.cutsPerMonth}\nDependentes: ${deps.length ? deps.map(dep => dep.name).join(', ') : 'nenhum'}\n\nQualquer dúvida, é só chamar!`;
 }
 
 const planDraft = { key: null, dependents: [] };
@@ -733,11 +837,11 @@ function openPlanDialog(client) {
 function addPlanDependent() {
   const input = $('#plan-dep-input'), phoneInput = $('#plan-dep-phone'); const name = input.value.trim(); const phone = phoneKey(phoneInput.value);
   if (name.length < 2) { input.focus(); return toast('Informe o nome do dependente.'); }
-  if (phone.length < 10) { phoneInput.focus(); return toast('Informe o WhatsApp do dependente com DDD.'); }
+  if (phone && phone.length < 10) { phoneInput.focus(); return toast('WhatsApp incompleto: informe com DDD ou deixe em branco.'); }
   const allowed = Number($('#plan-deps-allowed').value) || 0;
   if (planDraft.dependents.length >= allowed) return toast('Aumente a quantidade de dependentes do plano para cadastrar mais um.');
-  if (planDraft.dependents.some(dep => phoneKey(dep.phone) === phone)) return toast('Já existe um dependente com este WhatsApp.');
-  planDraft.dependents.push({ id: newId(), name, phone }); input.value = ''; phoneInput.value = ''; drawPlanDeps(); input.focus();
+  if (phone && planDraft.dependents.some(dep => phoneKey(dep.phone) === phone)) return toast('Já existe um dependente com este WhatsApp.');
+  planDraft.dependents.push({ id: newId(), name, phone: phone || '' }); input.value = ''; phoneInput.value = ''; drawPlanDeps(); input.focus();
 }
 /* Ao digitar o telefone de um plano novo, reaproveita nome de quem já é cliente */
 function lookupPlanClient() {
@@ -757,11 +861,13 @@ async function savePlan() {
   const existing = (state.data.clients || []).find(item => item.id === key);
   if (!planDraft.key && existing && existing.plan) { toast('Este cliente já tem plano mensal.'); button.disabled = false; return; }
   try {
-    await api(`/api/clients/${key}/plan`, { method: 'PUT', body: JSON.stringify({
+    const isNew = !planDraft.key;
+    const { client } = await api(`/api/clients/${key}/plan`, { method: 'PUT', body: JSON.stringify({
       name: $('#plan-name').value, phone, monthlyValue: $('#plan-monthly').value, planValue: $('#plan-value').value,
       cutsPerMonth: $('#plan-cuts').value, dependentsAllowed: $('#plan-deps-allowed').value, dependents: planDraft.dependents
     }) });
     $('#plan-dialog').close(); await reloadState(); renderAdmin(); keepPlanOpen(key); toast('Plano salvo no cadastro do cliente.');
+    if (isNew) showMessage(client.phone, planMessage(client)); // opção de avisar o cliente no WhatsApp
   } catch (error) { toast(error.message); }
   finally { button.disabled = false; }
 }
@@ -845,7 +951,7 @@ function renderOpenStatus() {
   label.textContent = text; dot.className = `dot ${kind}`;
 }
 function wireNavHighlight() {
-  const links = $$('.site-header .nav-link'); const sections = ['trabalho', 'booking', 'avaliacoes', 'contato'].map(id => document.getElementById(id));
+  const links = $$('.site-header .nav-link'); const sections = ['trabalho', 'booking', 'plano', 'avaliacoes', 'contato'].map(id => document.getElementById(id));
   if (!('IntersectionObserver' in window)) return;
   const observer = new IntersectionObserver(entries => entries.forEach(entry => {
     if (entry.isIntersecting) links.forEach(link => link.classList.toggle('active', link.getAttribute('href') === `#${entry.target.id}`));
@@ -958,7 +1064,7 @@ async function init() {
       window.addEventListener('hashchange', syncClientHash); syncClientHash();
       startLive();
     } else {
-      renderServices(); renderProducts(); updateSummary(); wirePublic(); renderPublicInfo();
+      renderServices(); renderProducts(); updateSummary(); wirePublic(); renderPublicInfo(); renderPlanBox();
     }
   } catch (error) { document.body.innerHTML = `<main style="padding:40px"><h1>Não foi possível iniciar</h1><p>${error.message}</p></main>`; }
 }

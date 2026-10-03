@@ -27,6 +27,7 @@
     <nav aria-label="Navegação principal">
       <a class="nav-link" href="#trabalho">Trabalho</a>
       <a class="nav-link" href="#booking">Agendar</a>
+      <a class="nav-link" id="nav-plano" href="#plano" style="display:none">Plano</a>
       <a class="nav-link" href="#avaliacoes">Avaliações</a>
       <a class="nav-link" href="#contato">Contato</a>
     </nav>
@@ -161,6 +162,15 @@
           <div class="summary-row"><span>Duração</span><b id="summary-duration">—</b></div>
           <div class="summary-total"><span>Total</span><strong id="summary-total">R$ 0,00</strong></div>
         </aside>
+      </div>
+
+      <!-- Plano mensal (configurado em Painel > Serviços) -->
+      <div class="plan-wrap" id="plan-wrap" hidden>
+        <div class="bk-heading plan-heading" id="plano">
+          <p class="eyebrow center"><span></span> Plano mensal <span></span></p>
+          <h2>PERSONALIZE <em>o seu plano</em></h2>
+        </div>
+        <div class="plan-box" id="plan-box"></div>
       </div>
     </section>
 

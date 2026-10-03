@@ -821,3 +821,51 @@ a.footer-link:hover{color:var(--orange)}
 .dep-chip a{color:var(--orange);font-size:11px;font-weight:700;text-decoration:none}
 .dep-chip a:hover{text-decoration:underline}
 .tall-dialog .dep-add input{font-size:11px;padding:14px 15px}
+
+.row-actions{white-space:nowrap}.row-actions .mini-btn+.mini-btn{margin-left:6px}
+
+
+/* ---------- Plano mensal ---------- */
+/* admin (aba Serviços) */
+.plan-config .panel-header{gap:18px;flex-wrap:wrap}
+.pc-switch{display:flex;align-items:center;gap:10px;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.pc-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 14px}
+.pc-grid .pc-wide{grid-column:1/-1}
+.pc-grid .reset-label{margin-bottom:0}
+.pc-grid .reset-label input{letter-spacing:0;text-transform:none}
+.pc-preview{margin:16px 0;padding:12px 14px;background:#efe8da;border-left:3px solid var(--orange);font-size:12px;color:#5f584e}
+@media(max-width:900px){.pc-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.pc-grid{grid-template-columns:minmax(0,1fr)}}
+
+/* site público (abaixo do box de agendamento) */
+.plan-wrap{max-width:1100px;margin:56px auto 0}
+.plan-wrap[hidden]{display:none}
+.plan-heading{scroll-margin-top:100px;margin-bottom:22px}
+.plan-box{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);background:#fffdf8;border:1px solid #d8d0c3;box-shadow:0 34px 60px -34px rgba(40,30,20,.4);color:var(--ink);overflow:hidden}
+.plan-info{background:var(--ink);color:var(--paper);padding:34px 32px;display:flex;flex-direction:column}
+.plan-info h3{font-family:var(--display);font-weight:400;font-size:clamp(34px,4vw,46px);letter-spacing:.02em;line-height:1;margin:8px 0 10px}
+.plan-desc{color:var(--muted);font-size:13px;line-height:1.7;margin:0 0 6px}
+.plan-from{display:flex;align-items:baseline;gap:8px;margin:18px 0 22px;flex-wrap:wrap}
+.plan-from small{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.plan-from strong{font-family:var(--display);font-weight:400;font-size:46px;color:var(--orange);line-height:1}
+.plan-from span{color:var(--muted);font-size:13px}
+.plan-perks{list-style:none;margin:auto 0 0;padding:20px 0 0;border-top:1px solid var(--line);display:grid;gap:12px;font-size:13px;line-height:1.5}
+.plan-perks li{display:flex;gap:10px;align-items:flex-start}
+.plan-perks i{flex:none;width:18px;height:18px;border-radius:50%;background:var(--orange);color:#fff;font-style:normal;font-size:10px;display:grid;place-items:center;margin-top:1px}
+.plan-build{padding:32px;display:flex;flex-direction:column;gap:14px}
+.plan-build h4{font-family:var(--display);font-weight:400;font-size:26px;letter-spacing:.03em;margin:0 0 4px}
+.plan-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;border:1px solid #d8d0c3;background:#fff}
+.plan-row b{display:block;font-size:13px}
+.plan-row small{display:block;color:#847d73;font-size:11px;margin-top:3px}
+.stepper{display:flex;align-items:center;gap:4px;flex:none}
+.stepper button{width:38px;height:38px;border:1px solid #b9b0a2;background:#fffdf8;color:var(--ink);font-size:20px;line-height:1;cursor:pointer;transition:.15s}
+.stepper button:hover:not(:disabled){background:var(--orange);border-color:var(--orange);color:#fff}
+.stepper button:disabled{opacity:.35;cursor:not-allowed}
+.stepper b{min-width:42px;text-align:center;font-family:var(--display);font-weight:400;font-size:28px}
+.plan-lines{display:grid;gap:8px;margin-top:4px;font-size:12px;color:#5f584e}
+.plan-lines div{display:flex;justify-content:space-between;gap:16px}
+.plan-total{display:flex;align-items:flex-end;justify-content:space-between;border-top:1px solid #d8d0c3;padding-top:16px;margin-top:auto}
+.plan-total span{font-size:10px;text-transform:uppercase;letter-spacing:.12em;font-weight:800}
+.plan-total strong{font-family:var(--display);font-weight:400;font-size:40px;color:var(--orange);line-height:1}
+@media(max-width:900px){.plan-box{grid-template-columns:minmax(0,1fr)}.plan-perks{margin-top:22px}}
+@media(max-width:600px){.plan-wrap{margin-top:36px}.plan-info,.plan-build{padding:24px 20px}.plan-box{margin:0 -14px;border-left:0;border-right:0}.plan-heading{scroll-margin-top:84px}}

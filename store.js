@@ -1,7 +1,7 @@
 /* Camada de dados do navegador (substitui o server.js).
    Banco: Firestore, uma coleção para cada tipo de informação:
 
-     config/business        -> dados do negócio (nome, WhatsApp, intervalo dos horários)
+     config/business        -> dados do negócio (nome, WhatsApp, intervalo dos horários) e `monthlyPlan` (modelo do plano mensal exibido no site)
      services/{id}          -> um documento por serviço
      products/{id}          -> um documento por produto (nome, custo, venda, descrição)
      hours/{0..6}           -> um documento por dia da semana (0 = domingo)
@@ -9,8 +9,8 @@
      clients/{telefone}     -> um documento por cliente (inclui o plano mensal em `plan`: valores, dependentes e cortes)
      meta/sync              -> marcador de última mudança (o painel lê só este documento para saber se há novidade)
 
-   O sistema nasce zerado: sem agendamentos e sem clientes. Só são criados os serviços e horários
-   padrão (editáveis no painel). Se o Firestore estiver indisponível, cai para localStorage. */
+   O sistema nasce zerado: sem agendamentos, clientes, serviços ou produtos. Só são criados os horários
+   de funcionamento padrão e os dados do negócio (editáveis no painel). Se o Firestore estiver indisponível, cai para localStorage. */
 (function () {
   const PROJECT_ID = 'barbearia-c80da';
   const API_KEY = 'AIzaSyD0x4MrjdJ_kP3I4-kVsSEFXeiRi1w2-Ws';
@@ -29,21 +29,9 @@
   const byOrder = list => list.map((s, i) => [s, i]).sort((a, b) => (a[0].order ?? a[1]) - (b[0].order ?? b[1])).map(x => x[0]);
 
   function initialData() {
-    const services = [
-      { id: 'corte', name: 'Corte', price: 35, duration: 40, active: true, description: 'Corte personalizado e finalização.' },
-      { id: 'barba', name: 'Barba', price: 35, duration: 30, active: true, description: 'Toalha quente, desenho e acabamento.' },
-      { id: 'combo', name: 'Corte e Barba', price: 70, duration: 75, active: true, featured: true, description: 'Combo completo com sobrancelha de cortesia.' },
-      { id: 'sobrancelha', name: 'Sobrancelha', price: 15, duration: 5, active: true, description: 'Alinhamento e acabamento.' },
-      { id: 'pezinho', name: 'Pezinho', price: null, duration: null, active: false, description: 'Acabamento de contorno.' },
-      { id: 'progressiva', name: 'Progressiva', price: 90, duration: 120, active: true, description: 'Alinhamento e redução de volume.' },
-      { id: 'platinado', name: 'Platinado', price: 140, duration: 120, active: true, description: 'Descoloração e tonalização completa.' },
-      { id: 'luzes', name: 'Luzes', price: 120, duration: 120, active: true, description: 'Luzes personalizadas e tonalização.' },
-      { id: 'depilacao', name: 'Nariz e orelha', price: 25, duration: 30, active: true, description: 'Depilação com acabamento cuidadoso.' },
-      { id: 'pele', name: 'Limpeza de pele', price: 30, duration: 30, active: true, description: 'Higienização e cuidado facial.' }
-    ];
     const labels = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
     const hours = labels.map((label, day) => ({ day, label, active: true, open: '10:00', close: day === 0 ? '13:00' : '20:00' }));
-    return { config: { businessName: 'Willzinho Barber', whatsapp: '5541999901208', slotInterval: 10 }, services, hours, products: [], appointments: [] };
+    return { config: { businessName: 'Willzinho Barber', whatsapp: '5541999901208', slotInterval: 10 }, services: [], hours, products: [], appointments: [] };
   }
 
   /* ---------- Firestore: codificação de valores ---------- */
@@ -106,6 +94,7 @@
       } while (token);
       return out;
     },
+    async del(col, id) { await req(`/${col}/${encodeURIComponent(id)}`, { method: 'DELETE' }); },
     async set(col, id, data) { await req(`/${col}/${encodeURIComponent(id)}`, { method: 'PATCH', body: { fields: fields(data) } }); },
     async update(col, id, data) {
       const params = Object.keys(data).map(k => 'updateMask.fieldPaths=' + encodeURIComponent(k));
@@ -148,8 +137,11 @@
       await fs.set('meta', 'sync', { updatedAt: Date.now() });
     },
     async version() { const d = await fs.get('meta', 'sync'); return d ? String(d.updatedAt) : '0'; },
+    saveMonthlyPlan: async plan => { await fs.update('config', 'business', { monthlyPlan: plan }); await fs.set('meta', 'sync', { updatedAt: Date.now() }); },
     saveService: s => fs.set('services', s.id, s),
     saveProduct: p => fs.set('products', p.id, p),
+    deleteService: id => fs.del('services', id),
+    deleteProduct: id => fs.del('products', id),
     saveHour: h => fs.set('hours', String(h.day), h),
     async resetData() {
       const [appts, clients] = await Promise.all([fs.ids('appointments'), fs.ids('clients')]);
@@ -186,8 +178,11 @@
       d.syncAt = Date.now(); writeLocal(d);
     },
     async updateAppointment(appt) { const d = this.db(); const i = d.appointments.findIndex(a => a.id === appt.id); if (i >= 0) d.appointments[i] = appt; d.syncAt = Date.now(); writeLocal(d); },
+    async saveMonthlyPlan(plan) { const d = this.db(); d.config = { ...d.config, monthlyPlan: plan }; d.syncAt = Date.now(); writeLocal(d); },
     async saveService(s) { const d = this.db(); const i = d.services.findIndex(x => x.id === s.id); if (i >= 0) d.services[i] = s; else d.services.push(s); writeLocal(d); },
     async saveProduct(p) { const d = this.db(); const i = d.products.findIndex(x => x.id === p.id); if (i >= 0) d.products[i] = p; else d.products.push(p); writeLocal(d); },
+    async deleteService(id) { const d = this.db(); d.services = d.services.filter(x => x.id !== id); writeLocal(d); },
+    async deleteProduct(id) { const d = this.db(); d.products = d.products.filter(x => x.id !== id); writeLocal(d); },
     async saveHour(h) { const d = this.db(); const i = d.hours.findIndex(x => x.day === h.day); if (i >= 0) d.hours[i] = h; writeLocal(d); },
     async resetData() { const d = this.db(); const n = d.appointments.length, c = d.clients.length; d.appointments = []; d.clients = []; d.syncAt = Date.now(); writeLocal(d); return { appointments: n, clients: c }; },
     async version() { return String(this.db().syncAt || 0); }
@@ -196,7 +191,6 @@
   /* ---------- Primeiro acesso: cria as coleções vazias (serviços e horários padrão) ---------- */
   async function seed() {
     const data = initialData(); const writes = [];
-    data.services.forEach((s, i) => writes.push({ col: 'services', id: s.id, data: { ...s, order: i } }));
     data.hours.forEach(h => writes.push({ col: 'hours', id: String(h.day), data: h }));
     // config por último: só existe se todo o resto foi gravado (marca a criação como concluída)
     writes.push({ col: 'config', id: 'business', data: data.config });
@@ -235,9 +229,6 @@
 
   function selectedServices(db, ids) {
     const unique = [...new Set(Array.isArray(ids) ? ids : [])];
-    if (unique.includes('combo')) {
-      ['corte', 'barba', 'sobrancelha'].forEach(id => { const i = unique.indexOf(id); if (i >= 0) unique.splice(i, 1); });
-    }
     return unique.map(id => db.services.find(s => s.id === id)).filter(s => s && s.active && s.price !== null && s.duration !== null);
   }
   function bookingTotals(db, ids) {
@@ -268,6 +259,12 @@
     }
     return slots;
   }
+  // serviços apagados do catálogo: o agendamento guarda nome, valor e duração, então ele segue reagendável
+  const withSnapshot = (db, appt) => {
+    if (!appt) return db;
+    const known = new Set(db.services.map(x => x.id));
+    return { ...db, services: [...db.services, ...(appt.services || []).filter(x => !known.has(x.id)).map(x => ({ ...x, active: true }))] };
+  };
   function validateBooking(db, body, ignoreId) {
     const customerName = String(body.customerName || '').trim().slice(0, 80);
     const phone = String(body.phone || '').replace(/\D/g, '').slice(0, 15);
@@ -281,6 +278,15 @@
     const productsTotal = money(products.reduce((n, p) => n + p.price, 0));
     return { customerName, phone, date, time, ...totals, products, total: money(totals.total + productsTotal) };
   }
+
+  /* Modelo do plano mensal (config/business.monthlyPlan): o que o cliente vê e personaliza no site */
+  const PLAN_DEFAULTS = { enabled: false, name: 'Plano Mensal', description: '', monthlyValue: 0, includedCuts: 4, extraCutValue: 0, dependentValue: 0, maxDependents: 3 };
+  const planNum = (v, fallback) => (v === null || v === undefined || v === '' || isNaN(Number(v)) || Number(v) < 0) ? fallback : money(v);
+  const planInt = (v, fallback) => (v === null || v === undefined || v === '' || isNaN(Number(v)) || Number(v) < 0) ? fallback : Math.floor(Number(v));
+  const normalizePlan = p => { const o = p || {}; return {
+    enabled: Boolean(o.enabled), name: String(o.name || PLAN_DEFAULTS.name).slice(0, 60), description: String(o.description || '').slice(0, 200),
+    monthlyValue: planNum(o.monthlyValue, 0), includedCuts: Math.max(1, planInt(o.includedCuts, PLAN_DEFAULTS.includedCuts)),
+    extraCutValue: planNum(o.extraCutValue, 0), dependentValue: planNum(o.dependentValue, 0), maxDependents: planInt(o.maxDependents, PLAN_DEFAULTS.maxDependents) }; };
 
   const ok = (data, status = 200) => ({ status, data });
   const fail = (status, error) => ({ status, data: { error } });
@@ -305,7 +311,8 @@
       const clients = url.searchParams.get('appointments') === '1' ? await store.listClients() : [];
       const admin = url.searchParams.get('appointments') === '1';
       const products = admin ? core.products : (core.products || []).map(({ cost, ...p }) => p);
-      return ok({ ...core, products, appointments, clients });
+      const services = admin ? core.services : core.services.map(({ cost, ...x }) => x);
+      return ok({ ...core, services, config: { ...core.config, monthlyPlan: normalizePlan(core.config && core.config.monthlyPlan) }, products, appointments, clients });
     }
 
     /* Busca de cliente pelo telefone (agendamento): devolve só o nome, nada além disso. */
@@ -322,7 +329,8 @@
       const date = url.searchParams.get('date') || '';
       const ids = (url.searchParams.get('services') || '').split(',').filter(Boolean);
       const [core, appointments] = await Promise.all([getCore(store), validDate(date) ? store.appointmentsByDate(date) : []]);
-      return ok({ slots: availability({ ...core, appointments }, date, ids, url.searchParams.get('ignoreId')) });
+      const ignoreId = url.searchParams.get('ignoreId'); const current = ignoreId ? await store.getAppointment(ignoreId) : null;
+      return ok({ slots: availability(withSnapshot({ ...core, appointments }, current), date, ids, ignoreId) });
     }
 
     if (method === 'POST' && url.pathname === '/api/appointments') {
@@ -333,7 +341,7 @@
       const appointment = {
         id: uuid(), clientId: phoneKey(v.phone), customerName: v.customerName, phone: v.phone, date: v.date, time: v.time,
         serviceIds: v.services.map(s => s.id),
-        services: v.services.map(({ id, name, price, duration }) => ({ id, name, price, duration })),
+        services: v.services.map(({ id, name, price, duration, cost }) => ({ id, name, price, duration, cost: cost ?? null })),
         productIds: v.products.map(p => p.id),
         products: v.products.map(({ id, name, price, cost }) => ({ id, name, price, cost: cost ?? null })),
         total: v.total, duration: v.duration, status: 'pending_confirmation',
@@ -355,7 +363,7 @@
       } else {
         const date = String(body.date || '');
         const [core, appointments] = await Promise.all([getCore(store, true), validDate(date) ? store.appointmentsByDate(date) : []]);
-        const v = validateBooking({ ...core, appointments }, { ...appt, date: body.date, time: body.time }, appt.id);
+        const v = validateBooking(withSnapshot({ ...core, appointments }, appt), { ...appt, date: body.date, time: body.time }, appt.id);
         if (v.error) return fail(422, v.error);
         appt.history.push({ type: 'reschedule', date: appt.date, time: appt.time, at: new Date().toISOString() });
         appt.date = v.date; appt.time = v.time; appt.status = 'rescheduled'; changed = ['date', 'time', 'status', 'history'];
@@ -373,11 +381,20 @@
       service.description = String(body.description ?? service.description ?? '').trim().slice(0, 160);
       service.price = body.price === null || body.price === '' ? null : money(body.price);
       service.duration = body.duration === null || body.duration === '' ? null : Math.max(5, Number(body.duration));
+      service.cost = (body.cost === null || body.cost === undefined || body.cost === '' || isNaN(Number(body.cost)) || Number(body.cost) < 0) ? null : money(body.cost);
       service.active = Boolean(body.active) && service.price !== null && service.duration !== null;
       if (!service.name) return fail(422, 'Informe o nome do serviço.');
       if (!target && (service.price === null || service.duration === null)) return fail(422, 'Informe o valor do serviço.');
       await store.saveService(service); bust();
       return ok({ service }, target ? 200 : 201);
+    }
+
+    if ((m = url.pathname.match(/^\/api\/(services|products)\/([^/]+)$/)) && method === 'DELETE') {
+      const core = await getCore(store, true);
+      const isService = m[1] === 'services';
+      if (!(isService ? core.services : core.products || []).some(x => x.id === m[2])) return fail(404, isService ? 'Serviço não encontrado.' : 'Produto não encontrado.');
+      await (isService ? store.deleteService(m[2]) : store.deleteProduct(m[2])); bust();
+      return ok({ deleted: m[2] });
     }
 
     if ((m = url.pathname.match(/^\/api\/products(?:\/([^/]+))?$/)) && ['POST', 'PUT'].includes(method)) {
@@ -394,9 +411,23 @@
       if (!product.name) return fail(422, 'Informe o nome do produto.');
       if (product.price === null) return fail(422, 'Informe o valor de venda.');
       if (product.cost === null) return fail(422, 'Informe o valor de custo.');
+      product.quantity = (body.quantity === null || body.quantity === undefined || body.quantity === '' || isNaN(Number(body.quantity)) || Number(body.quantity) < 0) ? null : Math.floor(Number(body.quantity));
       product.active = body.active === undefined ? true : Boolean(body.active);
       await store.saveProduct(product); bust();
       return ok({ product }, target ? 200 : 201);
+    }
+
+    /* ---------- Modelo do plano mensal (aba Serviços do painel -> box do site) ---------- */
+    if (method === 'PUT' && url.pathname === '/api/plan-config') {
+      const plan = normalizePlan({ ...body, enabled: Boolean(body.enabled) });
+      const strict = (v, label) => (v === null || v === undefined || v === '' || isNaN(Number(v)) || Number(v) < 0) ? `Informe ${label}.` : null;
+      const err = strict(body.monthlyValue, 'o valor mensal do plano') || strict(body.includedCuts, 'a quantidade mínima de cortes') || strict(body.extraCutValue, 'o valor de cada corte adicional') || strict(body.dependentValue, 'o valor adicional por dependente') || strict(body.maxDependents, 'o máximo de dependentes');
+      if (err) return fail(422, err);
+      if (Number(body.includedCuts) < 1) return fail(422, 'A quantidade mínima de cortes deve ser pelo menos 1.');
+      if (!String(body.name || '').trim()) return fail(422, 'Informe o nome do plano.');
+      plan.name = String(body.name).trim().slice(0, 60);
+      await store.saveMonthlyPlan(plan); bust();
+      return ok({ plan });
     }
 
     /* ---------- Plano mensal (fica dentro do cadastro do cliente) ---------- */
