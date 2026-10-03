@@ -1,6 +1,6 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const state = { data: null, selected: [], date: '', time: '', rescheduleId: null, rescheduleTime: '', clientKey: null, clientQuery: '' };
+const state = { data: null, selected: [], date: '', time: '', rescheduleId: null, rescheduleTime: '', clientKey: null, clientQuery: '', step: 1, saving: false, weekStart: 0 };
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const dateFmt = value => value ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(`${value}T12:00:00Z`)) : '—';
 const shortDate = value => new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', weekday: 'short', day: '2-digit', month: 'short' }).format(new Date(`${value}T12:00:00Z`));
@@ -33,13 +33,14 @@ function totals() {
 function renderServices() {
   $('#service-grid').innerHTML = state.data.services.map(item => {
     const ready = item.active && item.price !== null && item.duration !== null;
-    return `<button class="service-card ${state.selected.includes(item.id) ? 'selected' : ''} ${ready ? '' : 'unavailable'}" data-service="${item.id}" ${ready ? '' : 'disabled'}>
-      <div><h4>${item.name}</h4><p>${item.description || ''}</p>${ready ? `<small>${minutesLabel(item.duration)}</small>` : '<small>Em breve</small>'}</div>
+    return `<button type="button" class="service-card ${state.selected.includes(item.id) ? 'selected' : ''} ${ready ? '' : 'unavailable'}" data-service="${esc(item.id)}" ${ready ? '' : 'disabled'}>
+      <div><h4>${esc(item.name)}</h4><p>${esc(item.description || '')}</p>${ready ? `<small>${minutesLabel(item.duration)}</small>` : '<small>Em breve</small>'}</div>
       <div><div class="service-check">✓</div>${ready ? `<strong>${BRL.format(item.price)}</strong>` : ''}</div>
       ${item.featured ? '<span class="featured-tag">MAIS ESCOLHIDO</span>' : ''}
     </button>`;
   }).join('');
   $$('[data-service]').forEach(button => button.addEventListener('click', () => toggleService(button.dataset.service)));
+  updateScrollHint();
 }
 
 function toggleService(id) {
@@ -50,32 +51,129 @@ function toggleService(id) {
   }
   state.time = '';
   renderServices(); updateSummary();
-  $('#step-date').classList.toggle('locked', !state.selected.length);
-  $('#step-client').classList.add('locked');
-  if (state.date && state.selected.length) loadSlots();
+}
+
+/* ---------- Agendamento em etapas ---------- */
+const STEP_NAMES = ['Serviços', 'Data e horário', 'Seus dados', 'Confirmar'];
+const dowOf = date => new Date(`${date}T12:00:00Z`).getUTCDay();
+const hoursOn = date => state.data.hours.find(item => item.day === dowOf(date));
+const toMinutes = value => { const [h, m] = value.split(':').map(Number); return h * 60 + m; };
+function dayAvailable(date) {
+  const cfg = hoursOn(date); if (!cfg || !cfg.active) return false;
+  if (date !== todayISO()) return true;
+  const now = new Date(); return now.getHours() * 60 + now.getMinutes() < toMinutes(cfg.close);
+}
+const firstOpenDay = () => { for (let i = 0; i < 28; i++) if (dayAvailable(addDaysISO(i))) return addDaysISO(i); return todayISO(); };
+const phoneDigits = () => $('#customer-phone').value.replace(/\D/g, '');
+const stepValid = n => n === 1 ? state.selected.length > 0
+  : n === 2 ? Boolean(state.date && state.time)
+  : n === 3 ? $('#customer-name').value.trim().length >= 2 && phoneDigits().length >= 10 : true;
+const canGo = n => { for (let i = 1; i < n; i++) if (!stepValid(i)) return false; return true; };
+
+function goStep(n) {
+  if (n < 1 || n > 4 || !canGo(n)) return;
+  state.step = n;
+  if (n === 2) {
+    if (!state.date) { state.date = firstOpenDay(); state.time = ''; }
+    $('#booking-date').value = state.date;
+    state.weekStart = Math.max(0, Math.floor(Math.round((new Date(`${state.date}T12:00:00Z`) - new Date(`${todayISO()}T12:00:00Z`)) / 86400000) / 7) * 7);
+    renderDays(); loadSlots();
+  }
+  updateSummary();
+  $('#bk-body').scrollTop = 0; updateScrollHint();
+  const box = $('#bk'); const header = $('.site-header');
+  const top = box.getBoundingClientRect().top;
+  if (top < (header ? header.offsetHeight : 0) || box.getBoundingClientRect().bottom > innerHeight + 4) box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function renderDays() {
+  const fmtDay = new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', weekday: 'short' });
+  const fmtMonth = new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', month: 'short' });
+  const dates = Array.from({ length: 7 }, (_, i) => addDaysISO(state.weekStart + i));
+  const short = date => { const d = new Date(`${date}T12:00:00Z`); return `${d.getUTCDate()} ${fmtMonth.format(d).replace('.', '')}`; };
+  $('#week-label').textContent = `${short(dates[0])} – ${short(dates[6])}`;
+  $('#week-prev').disabled = state.weekStart <= 0;
+  $('#day-strip').innerHTML = dates.map(date => {
+    const d = new Date(`${date}T12:00:00Z`);
+    return `<button type="button" class="day-chip ${date === state.date ? 'selected' : ''}" data-day="${date}" ${dayAvailable(date) ? '' : 'disabled'}>
+      <small>${fmtDay.format(d).replace('.', '')}</small><b>${d.getUTCDate()}</b></button>`;
+  }).join('');
+  $$('[data-day]').forEach(button => button.addEventListener('click', () => selectDate(button.dataset.day)));
+}
+
+function selectDate(date) {
+  if (!date) return;
+  state.date = date; state.time = ''; $('#booking-date').value = date;
+  const diff = Math.round((new Date(`${date}T12:00:00Z`) - new Date(`${todayISO()}T12:00:00Z`)) / 86400000);
+  state.weekStart = Math.max(0, Math.floor(diff / 7) * 7);
+  renderDays(); loadSlots(); updateSummary();
+}
+function shiftWeek(direction) { state.weekStart = Math.max(0, state.weekStart + direction * 7); renderDays(); }
+
+async function loadSlots() {
+  const box = $('#time-slots');
+  if (!state.date) { box.innerHTML = ''; return; }
+  if (!hoursOn(state.date) || !hoursOn(state.date).active) { box.innerHTML = '<p class="empty-note">Estamos fechados neste dia. Escolha outra data.</p>'; updateScrollHint(); return; }
+  const token = `${state.date}|${state.selected.join(',')}`; loadSlots.token = token;
+  box.innerHTML = '<p class="empty-note">Consultando a agenda…</p>';
+  try {
+    const result = await api(`/api/availability?date=${state.date}&services=${state.selected.join(',')}`);
+    if (loadSlots.token !== token) return;
+    if (state.time && !result.slots.includes(state.time)) state.time = '';
+    const groups = [['Manhã', t => t < '12:00'], ['Tarde', t => t >= '12:00' && t < '18:00'], ['Noite', t => t >= '18:00']];
+    box.innerHTML = result.slots.length
+      ? groups.map(([name, test]) => { const list = result.slots.filter(test); return list.length ? `<div class="slot-group"><h5>${name}</h5><div class="slot-row">${list.map(time => `<button type="button" class="time-slot ${state.time === time ? 'selected' : ''}" data-time="${time}">${time}</button>`).join('')}</div></div>` : ''; }).join('')
+      : '<p class="empty-note">Nenhum horário disponível neste dia para essa combinação. Tente outra data.</p>';
+    $$('[data-time]', box).forEach(button => button.addEventListener('click', () => {
+      state.time = button.dataset.time; $$('.time-slot', box).forEach(item => item.classList.toggle('selected', item === button)); updateSummary();
+    }));
+  } catch (error) { box.innerHTML = `<p class="empty-note">${esc(error.message)}</p>`; }
+  updateSummary(); updateScrollHint();
+}
+
+function renderReview() {
+  const services = selectedServices(); const sum = totals();
+  $('#bk-review').innerHTML = `
+    <div class="rv-block"><div class="rv-title"><small>Serviços</small><button type="button" class="rv-edit" data-go="1">Alterar</button></div>
+      ${services.map(item => `<div class="rv-line"><span>${esc(item.name)}</span><b>${BRL.format(item.price)}</b></div>`).join('')}</div>
+    <div class="rv-block"><div class="rv-title"><small>Data e horário</small><button type="button" class="rv-edit" data-go="2">Alterar</button></div>
+      <div class="rv-grid"><div><span>Data</span><b>${esc(shortDate(state.date))}</b></div><div><span>Horário</span><b>${esc(state.time)}</b></div><div><span>Duração</span><b>${minutesLabel(sum.duration)}</b></div></div></div>
+    <div class="rv-block"><div class="rv-title"><small>Seus dados</small><button type="button" class="rv-edit" data-go="3">Alterar</button></div>
+      <div class="rv-grid"><div><span>Nome</span><b>${esc($('#customer-name').value.trim())}</b></div><div><span>WhatsApp</span><b>${esc($('#customer-phone').value)}</b></div></div></div>
+    <div class="rv-total"><span>Total</span><strong>${BRL.format(sum.total)}</strong></div>
+    <p class="bk-note">✓ Você confere a mensagem antes de enviar pelo WhatsApp.</p>`;
+  $$('.rv-edit', $('#bk-review')).forEach(button => button.addEventListener('click', () => goStep(Number(button.dataset.go))));
+}
+
+function updateScrollHint() {
+  const body = $('#bk-body'); if (!body) return;
+  requestAnimationFrame(() => body.classList.toggle('has-more', body.scrollHeight - body.clientHeight - body.scrollTop > 6));
 }
 
 function updateSummary() {
   const services = selectedServices(); const sum = totals();
-  $('#summary-services').innerHTML = services.length ? services.map(item => `<div class="summary-service"><span>${item.name}</span><b>${BRL.format(item.price)}</b></div>`).join('') : '<p>Nenhum serviço selecionado.</p>';
-  $('#summary-date').textContent = dateFmt(state.date);
+  $('#summary-services').innerHTML = services.length ? services.map(item => `<div class="summary-service"><span>${esc(item.name)}</span><b>${BRL.format(item.price)}</b></div>`).join('') : '<p>Nenhum serviço selecionado.</p>';
+  $('#summary-date').textContent = state.date ? dateFmt(state.date) : '—';
   $('#summary-time').textContent = state.time || '—';
   $('#summary-duration').textContent = sum.duration ? minutesLabel(sum.duration) : '—';
   $('#summary-total').textContent = BRL.format(sum.total);
-  const ready = services.length && state.date && state.time && $('#customer-name').value.trim().length >= 2 && $('#customer-phone').value.replace(/\D/g, '').length >= 10;
-  $('#confirm-booking').disabled = !ready;
-}
+  $('#bk-mini-total').textContent = BRL.format(sum.total);
+  $('#bk-mini-info').textContent = services.length ? `${services.length} ${services.length === 1 ? 'serviço' : 'serviços'} · ${minutesLabel(sum.duration)}` : 'Nenhum serviço';
 
-async function loadSlots() {
-  const box = $('#time-slots'); box.innerHTML = '<p class="empty-note">Consultando a agenda…</p>';
-  try {
-    const result = await api(`/api/availability?date=${state.date}&services=${state.selected.join(',')}`);
-    box.innerHTML = result.slots.length ? result.slots.map(time => `<button class="time-slot ${state.time === time ? 'selected' : ''}" data-time="${time}">${time}</button>`).join('') : '<p class="empty-note">Nenhum horário disponível para esta combinação.</p>';
-    $$('[data-time]', box).forEach(button => button.addEventListener('click', () => {
-      state.time = button.dataset.time; $$('.time-slot', box).forEach(item => item.classList.toggle('selected', item === button));
-      $('#step-client').classList.remove('locked'); updateSummary();
-    }));
-  } catch (error) { box.innerHTML = `<p class="empty-note">${error.message}</p>`; }
+  $('#bk').dataset.step = state.step;
+  $('#bk-progress').style.width = `${state.step * 25}%`;
+  $$('.bk-pane').forEach(pane => pane.classList.toggle('active', Number(pane.dataset.pane) === state.step));
+  $$('#bk-steps li').forEach(item => {
+    const n = Number(item.dataset.go); const done = n !== state.step && n < 4 && canGo(n + 1);
+    item.classList.toggle('active', n === state.step); item.classList.toggle('done', done); item.classList.toggle('locked', !canGo(n));
+    item.querySelector('i').textContent = done ? '✓' : n;
+  });
+  const next = $('#bk-next');
+  next.innerHTML = state.step === 4 ? 'Confirmar e abrir WhatsApp <span>→</span>' : state.step === 3 ? 'Revisar <span>→</span>' : 'Continuar <span>→</span>';
+  next.disabled = !stepValid(state.step) || state.saving;
+  $('#bk-back').style.visibility = state.step === 1 ? 'hidden' : 'visible';
+  if (state.step === 4) renderReview();
+  updateScrollHint();
 }
 
 function bookingMessage(appointment) {
@@ -91,29 +189,46 @@ function showMessage(phone, message) {
 }
 
 async function confirmBooking() {
-  const button = $('#confirm-booking'); button.disabled = true; button.textContent = 'Salvando agendamento…';
+  if (state.saving) return; state.saving = true;
+  const button = $('#bk-next'); button.disabled = true; button.textContent = 'Salvando agendamento…';
   try {
     const result = await api('/api/appointments', { method: 'POST', body: JSON.stringify({
       customerName: $('#customer-name').value, phone: $('#customer-phone').value,
       date: state.date, time: state.time, serviceIds: state.selected
     }) });
-    await reloadState();
+    state.saving = false; resetBooking();
     showMessage(result.whatsapp, bookingMessage(result.appointment));
     toast('Agendamento salvo com sucesso.');
-    state.selected = []; state.time = ''; renderServices(); updateSummary();
-  } catch (error) { toast(error.message); if (state.date) loadSlots(); }
-  finally { button.innerHTML = 'Confirmar e abrir WhatsApp <span>→</span>'; updateSummary(); }
+  } catch (error) {
+    state.saving = false; toast(error.message);
+    if (/hor[áa]rio/i.test(error.message)) { state.time = ''; state.step = 2; renderDays(); loadSlots(); }
+    updateSummary();
+  }
+}
+
+function resetBooking() {
+  state.selected = []; state.date = ''; state.time = ''; state.step = 1; state.weekStart = 0;
+  $('#customer-name').value = ''; $('#customer-phone').value = ''; $('#booking-date').value = '';
+  renderServices(); $('#time-slots').innerHTML = ''; $('#day-strip').innerHTML = ''; updateSummary(); $('#bk-body').scrollTop = 0;
 }
 
 function wirePublic() {
-  const input = $('#booking-date'); input.min = todayISO(); input.value = state.date;
-  input.addEventListener('change', event => { state.date = event.target.value; state.time = ''; updateSummary(); loadSlots(); });
+  $('#booking-date').min = todayISO();
+  $('#booking-date').addEventListener('change', event => selectDate(event.target.value));
   ['#customer-name', '#customer-phone'].forEach(selector => $(selector).addEventListener('input', updateSummary));
   $('#customer-phone').addEventListener('input', event => {
-    let digits = event.target.value.replace(/\D/g, '').slice(0, 11);
-    event.target.value = digits.length > 6 ? `(${digits.slice(0,2)}) ${digits.slice(2,7)}-${digits.slice(7)}` : digits;
+    const digits = event.target.value.replace(/\D/g, '').slice(0, 11);
+    event.target.value = digits.length > 6 ? `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}` : digits;
   });
-  $('#confirm-booking').addEventListener('click', confirmBooking);
+  $('#customer-name').addEventListener('keydown', event => { if (event.key === 'Enter') $('#customer-phone').focus(); });
+  $('#customer-phone').addEventListener('keydown', event => { if (event.key === 'Enter' && stepValid(3)) goStep(4); });
+  $('#bk-next').addEventListener('click', () => (state.step < 4 ? goStep(state.step + 1) : confirmBooking()));
+  $('#bk-back').addEventListener('click', () => goStep(state.step - 1));
+  $('#week-prev').addEventListener('click', () => shiftWeek(-1));
+  $('#week-next').addEventListener('click', () => shiftWeek(1));
+  $$('#bk-steps li').forEach(item => item.addEventListener('click', () => goStep(Number(item.dataset.go))));
+  $('#bk-body').addEventListener('scroll', updateScrollHint, { passive: true });
+  window.addEventListener('resize', updateScrollHint);
   $$('[data-scroll]').forEach(button => button.addEventListener('click', () => $('#booking').scrollIntoView({ behavior: 'smooth' })));
   $$('.dialog-close').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
 }
@@ -432,16 +547,39 @@ function renderPublicInfo() {
   const year = $('#year'); if (year) year.textContent = new Date().getFullYear();
 }
 
+/* ---------- Sistema: zerar dados ---------- */
+function renderSystem() {
+  const appointments = state.data.appointments.length; const clients = buildClients().length;
+  $('#admin-system').innerHTML = `<div class="panel-card danger-zone">
+    <div class="panel-header"><div><h3>ZERAR DADOS</h3><p>Apaga todos os agendamentos e clientes e deixa o sistema como novo. Serviços, preços e horários de funcionamento são mantidos.</p></div></div>
+    <div class="reset-stats"><div><strong>${appointments}</strong><span>${appointments === 1 ? 'agendamento' : 'agendamentos'}</span></div><div><strong>${clients}</strong><span>${clients === 1 ? 'cliente' : 'clientes'}</span></div></div>
+    <button class="mini-btn danger" id="reset-open" ${appointments || clients ? '' : 'disabled'}>${appointments || clients ? 'Zerar dados…' : 'Sistema já está zerado'}</button>
+  </div>`;
+  const open = $('#reset-open'); if (!open) return;
+  open.addEventListener('click', () => {
+    $('#reset-warn').textContent = `Serão apagados ${appointments} ${appointments === 1 ? 'agendamento' : 'agendamentos'} e ${clients} ${clients === 1 ? 'cliente' : 'clientes'}. Esta ação não pode ser desfeita.`;
+    $('#reset-confirm').value = ''; $('#reset-run').disabled = true; $('#reset-dialog').showModal(); $('#reset-confirm').focus();
+  });
+}
+async function runReset() {
+  const button = $('#reset-run'); button.disabled = true; button.textContent = 'Apagando…';
+  try {
+    await api('/api/reset', { method: 'POST', body: JSON.stringify({ confirm: $('#reset-confirm').value.trim().toUpperCase() }) });
+    $('#reset-dialog').close(); await reloadState(); renderAdmin(); toast('Sistema zerado.');
+  } catch (error) { toast(error.message); }
+  finally { button.textContent = 'Apagar agendamentos e clientes'; button.disabled = $('#reset-confirm').value.trim().toUpperCase() !== 'ZERAR'; }
+}
+
 function renderAdmin() {
-  renderDashboard(); renderAgenda(); renderClients(); renderServiceAdmin(); renderHours();
+  renderDashboard(); renderAgenda(); renderClients(); renderServiceAdmin(); renderHours(); renderSystem();
 }
 function setAdminTab(tab) {
-  const titles = { dashboard: 'VISÃO GERAL', agenda: 'AGENDAMENTOS', clients: 'CLIENTES', services: 'SERVIÇOS', hours: 'HORÁRIOS' };
+  const titles = { dashboard: 'VISÃO GERAL', agenda: 'AGENDAMENTOS', clients: 'CLIENTES', services: 'SERVIÇOS', hours: 'HORÁRIOS', system: 'SISTEMA' };
   $$('.admin-nav').forEach(button => button.classList.toggle('active', button.dataset.adminTab === tab));
   $$('.admin-panel').forEach(panel => panel.classList.toggle('hidden', panel.id !== `admin-${tab}`));
   $('#admin-title').textContent = titles[tab];
 }
-async function reloadState() { state.data = await api('/api/state'); }
+async function reloadState() { state.data = await api('/api/state' + (document.body.classList.contains('admin-page') ? '?appointments=1' : '')); }
 async function init() {
   try {
     await reloadState();
@@ -453,9 +591,11 @@ async function init() {
       $('#reschedule-date').addEventListener('change', () => { state.rescheduleTime = ''; $('#save-reschedule').disabled = true; loadRescheduleSlots(); });
       $('#save-reschedule').addEventListener('click', saveReschedule);
       $$('.dialog-close').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
+      $('#reset-confirm').addEventListener('input', event => { $('#reset-run').disabled = event.target.value.trim().toUpperCase() !== 'ZERAR'; });
+      $('#reset-run').addEventListener('click', runReset);
       window.addEventListener('hashchange', syncClientHash); syncClientHash();
     } else {
-      state.date = todayISO(); renderServices(); updateSummary(); wirePublic(); renderPublicInfo();
+      renderServices(); updateSummary(); wirePublic(); renderPublicInfo();
     }
   } catch (error) { document.body.innerHTML = `<main style="padding:40px"><h1>Não foi possível iniciar</h1><p>${error.message}</p></main>`; }
 }

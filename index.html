@@ -73,37 +73,71 @@
       </div>
     </section>
 
-    <!-- 3. AGENDAMENTO -->
+    <!-- 3. AGENDAMENTO (box em etapas) -->
     <section class="booking-section" id="booking">
-      <div class="section-heading">
+      <div class="bk-heading">
         <p class="eyebrow center"><span></span> Agendamento online <span></span></p>
-        <h2>MONTE SEU<br><em>ATENDIMENTO</em></h2>
-        <p>Primeiro selecione os serviços. Assim mostramos apenas os horários em que o atendimento completo cabe na agenda.</p>
+        <h2>MONTE SEU <em>atendimento</em></h2>
       </div>
 
-      <div class="booking-layout">
-        <div class="booking-main">
-          <div class="step-block active" id="step-services">
-            <div class="step-title"><span>01</span><div><h3>Escolha os serviços</h3><p>Você pode selecionar mais de um.</p></div></div>
-            <div class="service-grid" id="service-grid"><div class="skeleton tall"></div><div class="skeleton tall"></div></div>
+      <div class="bk" id="bk" data-step="1">
+        <div class="bk-main">
+          <div class="bk-head">
+            <ol class="bk-steps" id="bk-steps">
+              <li data-go="1" class="active"><i>1</i><span>Serviços</span></li>
+              <li data-go="2" class="locked"><i>2</i><span>Data e horário</span></li>
+              <li data-go="3" class="locked"><i>3</i><span>Seus dados</span></li>
+              <li data-go="4" class="locked"><i>4</i><span>Confirmar</span></li>
+            </ol>
+            <div class="bk-progress"><b id="bk-progress"></b></div>
           </div>
 
-          <div class="step-block locked" id="step-date">
-            <div class="step-title"><span>02</span><div><h3>Data e horário</h3><p>Disponibilidade calculada em tempo real.</p></div></div>
-            <div class="date-row"><label for="booking-date">Data</label><input id="booking-date" type="date"></div>
-            <div class="slots" id="time-slots"><p class="empty-note">Selecione os serviços e uma data.</p></div>
+          <div class="bk-body" id="bk-body">
+            <section class="bk-pane active" data-pane="1">
+              <h3>Escolha os serviços</h3>
+              <p class="bk-hint">Você pode selecionar mais de um.</p>
+              <div class="service-grid" id="service-grid"><div class="skeleton tall"></div><div class="skeleton tall"></div></div>
+            </section>
+
+            <section class="bk-pane" data-pane="2">
+              <h3>Data e horário</h3>
+              <p class="bk-hint">Só mostramos horários em que o atendimento completo cabe.</p>
+              <div class="week-nav">
+                <button type="button" id="week-prev" aria-label="Semana anterior">‹</button>
+                <b id="week-label"></b>
+                <button type="button" id="week-next" aria-label="Próxima semana">›</button>
+                <input id="booking-date" type="date" aria-label="Escolher outra data">
+              </div>
+              <div class="day-strip" id="day-strip"></div>
+              <div class="slots" id="time-slots"></div>
+            </section>
+
+            <section class="bk-pane" data-pane="3">
+              <h3>Seus dados</h3>
+              <p class="bk-hint">Usaremos o WhatsApp apenas para falar sobre este agendamento.</p>
+              <div class="form-grid">
+                <label>Nome completo<input id="customer-name" autocomplete="name" placeholder="Como devemos chamar você?"></label>
+                <label>WhatsApp<input id="customer-phone" inputmode="tel" autocomplete="tel" placeholder="(00) 00000-0000"></label>
+              </div>
+            </section>
+
+            <section class="bk-pane" data-pane="4">
+              <h3>Confira e confirme</h3>
+              <p class="bk-hint">Se algo estiver errado, volte e altere antes de confirmar.</p>
+              <div class="bk-review" id="bk-review"></div>
+            </section>
           </div>
 
-          <div class="step-block locked" id="step-client">
-            <div class="step-title"><span>03</span><div><h3>Seus dados</h3><p>Usaremos o WhatsApp apenas sobre este agendamento.</p></div></div>
-            <div class="form-grid">
-              <label>Nome completo<input id="customer-name" autocomplete="name" placeholder="Como devemos chamar você?"></label>
-              <label>WhatsApp<input id="customer-phone" inputmode="tel" autocomplete="tel" placeholder="(00) 00000-0000"></label>
+          <div class="bk-foot">
+            <div class="bk-mini"><small>Total</small><b id="bk-mini-total">R$ 0,00</b><span id="bk-mini-info">Nenhum serviço</span></div>
+            <div class="bk-actions">
+              <button type="button" class="bk-back" id="bk-back" aria-label="Voltar"><span aria-hidden="true">←</span><em>Voltar</em></button>
+              <button type="button" class="primary-btn" id="bk-next" disabled>Continuar <span>→</span></button>
             </div>
           </div>
         </div>
 
-        <aside class="booking-summary">
+        <aside class="bk-side" aria-label="Resumo do agendamento">
           <p class="summary-kicker">SEU AGENDAMENTO</p>
           <h3>Resumo</h3>
           <div id="summary-services" class="summary-services"><p>Nenhum serviço selecionado.</p></div>
@@ -111,8 +145,6 @@
           <div class="summary-row"><span>Horário</span><b id="summary-time">—</b></div>
           <div class="summary-row"><span>Duração</span><b id="summary-duration">—</b></div>
           <div class="summary-total"><span>Total</span><strong id="summary-total">R$ 0,00</strong></div>
-          <button id="confirm-booking" class="primary-btn full" disabled>Confirmar e abrir WhatsApp <span>→</span></button>
-          <small class="secure-note">✓ Você confere tudo antes de enviar a mensagem.</small>
         </aside>
       </div>
     </section>

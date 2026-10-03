@@ -2,11 +2,17 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Modo público solicitado. Qualquer pessoa pode ler e alterar o estado.
-    // Substitua por autenticação antes de utilizar dados reais de clientes.
-    match /system/state {
-      allow read, write: if true;
-    }
+    // ATENÇÃO: acesso público (sem login), como combinado para o MVP.
+    // Qualquer pessoa pode ler e alterar estes dados. Só agendamentos
+    // e clientes podem ser apagados (para zerar o sistema). Antes de usar dados reais de clientes,
+    // coloque autenticação no painel /admin/ e restrinja estas regras.
+
+    match /config/{doc}       { allow read, create, update: if true; allow delete: if false; }
+    match /services/{doc}     { allow read, create, update: if true; allow delete: if false; }
+    match /hours/{doc}        { allow read, create, update: if true; allow delete: if false; }
+    // agendamentos e clientes podem ser apagados (botão "Zerar dados" do painel)
+    match /appointments/{doc} { allow read, create, update, delete: if true; }
+    match /clients/{doc}      { allow read, create, update, delete: if true; }
 
     match /{document=**} {
       allow read, write: if false;

@@ -27,6 +27,7 @@
         <button class="admin-nav" data-admin-tab="clients"><span>☺</span>Clientes</button>
         <button class="admin-nav" data-admin-tab="services"><span>✦</span>Serviços</button>
         <button class="admin-nav" data-admin-tab="hours"><span>◷</span>Horários</button>
+        <button class="admin-nav" data-admin-tab="system"><span>⚙</span>Sistema</button>
       </nav>
       <div class="admin-user"><div>AD</div><span><b>Administrador</b><small>Operação da barbearia</small></span></div>
     </aside>
@@ -37,6 +38,7 @@
       <section id="admin-clients" class="admin-panel hidden"></section>
       <section id="admin-services" class="admin-panel hidden"></section>
       <section id="admin-hours" class="admin-panel hidden"></section>
+      <section id="admin-system" class="admin-panel hidden"></section>
     </section>
   </main>
 
@@ -51,6 +53,13 @@
     <p class="eyebrow"><span></span> Alterar agendamento</p><h3>REAGENDAR HORÁRIO</h3>
     <input id="reschedule-date" type="date"><div id="reschedule-slots" class="slots compact"></div>
     <button id="save-reschedule" class="primary-btn full" disabled>Confirmar reagendamento</button>
+  </dialog>
+  <dialog id="reset-dialog" class="app-dialog">
+    <button class="dialog-close" aria-label="Fechar">×</button>
+    <p class="eyebrow"><span></span> Ação permanente</p><h3>ZERAR DADOS DO SISTEMA</h3>
+    <p class="reset-warn" id="reset-warn"></p>
+    <label class="reset-label">Digite <b>ZERAR</b> para confirmar<input id="reset-confirm" autocomplete="off" placeholder="ZERAR"></label>
+    <button id="reset-run" class="primary-btn full danger-btn" disabled>Apagar agendamentos e clientes</button>
   </dialog>
   <div id="toast" class="toast" role="status"></div>
   <script src="../store.js"></script>
