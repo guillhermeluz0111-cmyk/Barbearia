@@ -25,6 +25,7 @@
         <button class="admin-nav active" data-admin-tab="dashboard"><span>⌁</span>Visão geral</button>
         <button class="admin-nav" data-admin-tab="agenda"><span>□</span>Agendamentos</button>
         <button class="admin-nav" data-admin-tab="clients"><span>☺</span>Clientes</button>
+        <button class="admin-nav" data-admin-tab="plans"><span>♛</span>Planos mensais</button>
         <button class="admin-nav" data-admin-tab="services"><span>✦</span>Serviços</button>
         <button class="admin-nav" data-admin-tab="hours"><span>◷</span>Horários</button>
         <button class="admin-nav" data-admin-tab="system"><span>⚙</span>Sistema</button>
@@ -36,6 +37,7 @@
       <section id="admin-dashboard" class="admin-panel"></section>
       <section id="admin-agenda" class="admin-panel hidden"></section>
       <section id="admin-clients" class="admin-panel hidden"></section>
+      <section id="admin-plans" class="admin-panel hidden"></section>
       <section id="admin-services" class="admin-panel hidden"></section>
       <section id="admin-hours" class="admin-panel hidden"></section>
       <section id="admin-system" class="admin-panel hidden"></section>
@@ -53,6 +55,59 @@
     <p class="eyebrow"><span></span> Alterar agendamento</p><h3>REAGENDAR HORÁRIO</h3>
     <input id="reschedule-date" type="date"><div id="reschedule-slots" class="slots compact"></div>
     <button id="save-reschedule" class="primary-btn full" disabled>Confirmar reagendamento</button>
+  </dialog>
+  <dialog id="plan-dialog" class="app-dialog tall-dialog">
+    <button class="dialog-close" aria-label="Fechar">×</button>
+    <p class="eyebrow"><span></span> Plano mensal</p><h3 id="plan-dialog-title">NOVO PLANO</h3>
+    <p id="plan-dialog-hint" class="phone-hint" hidden></p>
+    <div class="two-cols">
+      <label class="reset-label">Usuário<input id="plan-name" autocomplete="off" placeholder="Nome do cliente"></label>
+      <label class="reset-label">Telefone<input id="plan-phone" inputmode="tel" autocomplete="off" placeholder="(00) 00000-0000"></label>
+    </div>
+    <div class="two-cols">
+      <label class="reset-label">Valor do plano mensal (R$)<input id="plan-monthly" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00"></label>
+      <label class="reset-label">Valor do plano (R$)<input id="plan-value" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00"></label>
+    </div>
+    <div class="two-cols">
+      <label class="reset-label">Quantidade de cortes no mês<input id="plan-cuts" type="number" min="0" step="1" inputmode="numeric" placeholder="4"></label>
+      <label class="reset-label">Quantidade de dependentes<input id="plan-deps-allowed" type="number" min="0" step="1" inputmode="numeric" value="0"></label>
+    </div>
+    <div class="dep-box">
+      <small class="dep-title">Dependentes cadastrados <b id="plan-deps-count"></b></small>
+      <div class="dep-add"><input id="plan-dep-input" autocomplete="off" placeholder="Nome do dependente"><input id="plan-dep-phone" inputmode="tel" autocomplete="off" placeholder="WhatsApp (00) 00000-0000"><button type="button" class="mini-btn confirm" id="plan-dep-add">Adicionar</button></div>
+      <div id="plan-dep-list" class="chips"></div>
+    </div>
+    <button id="plan-save" class="primary-btn full">Salvar plano</button>
+  </dialog>
+  <dialog id="cut-dialog" class="app-dialog">
+    <button class="dialog-close" aria-label="Fechar">×</button>
+    <p class="eyebrow"><span></span> Controle do plano</p><h3>REGISTRAR CORTE</h3>
+    <p id="cut-client" class="cut-client"></p>
+    <label class="reset-label">Data do corte<input id="cut-date" type="date"></label>
+    <label class="reset-label">Quem realizou o corte<select id="cut-who"></select></label>
+    <button id="cut-save" class="primary-btn full">Registrar corte</button>
+  </dialog>
+  <dialog id="item-dialog" class="app-dialog">
+    <button class="dialog-close" aria-label="Fechar">×</button>
+    <p class="eyebrow"><span></span> Catálogo</p><h3>ADICIONAR ITEM</h3>
+    <div class="choice-row" role="group" aria-label="Tipo de item">
+      <button type="button" class="choice active" data-item-type="service"><b>Serviço</b><small>Nome e valor</small></button>
+      <button type="button" class="choice" data-item-type="product"><b>Produto</b><small>Custo, venda e descrição</small></button>
+    </div>
+    <div class="item-fields" data-for="service">
+      <label class="reset-label">Nome do serviço<input id="new-service-name" autocomplete="off" placeholder="Ex.: Degradê"></label>
+      <label class="reset-label">Valor (R$)<input id="new-service-price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00"></label>
+      <label class="reset-label">Duração (min) — define o tamanho do horário na agenda<input id="new-service-duration" type="number" min="5" step="5" inputmode="numeric" value="30"></label>
+    </div>
+    <div class="item-fields" data-for="product" hidden>
+      <label class="reset-label">Nome do produto<input id="new-product-name" autocomplete="off" placeholder="Ex.: Pomada modeladora"></label>
+      <div class="two-cols">
+        <label class="reset-label">Valor de custo (R$)<input id="new-product-cost" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00"></label>
+        <label class="reset-label">Valor de venda (R$)<input id="new-product-price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00"></label>
+      </div>
+      <label class="reset-label">Descrição<textarea id="new-product-desc" rows="3" maxlength="200" placeholder="Fixação, acabamento, tamanho…"></textarea></label>
+    </div>
+    <button id="item-save" class="primary-btn full">Adicionar</button>
   </dialog>
   <dialog id="reset-dialog" class="app-dialog">
     <button class="dialog-close" aria-label="Fechar">×</button>
