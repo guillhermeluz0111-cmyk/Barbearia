@@ -244,6 +244,18 @@
     <textarea id="message-preview" rows="8"></textarea>
     <button id="open-whatsapp" class="primary-btn full">Abrir WhatsApp <span>↗</span></button>
   </dialog>
+  <dialog id="plan-signup-dialog" class="app-dialog tall-dialog">
+    <button class="dialog-close" aria-label="Fechar">×</button>
+    <p class="eyebrow"><span></span> Plano mensal</p><h3>FINALIZE SUA ASSINATURA</h3>
+    <p class="plan-signup-sum" id="plan-signup-sum"></p>
+    <div class="two-cols">
+      <label class="reset-label">Nome completo<input id="ps-name" autocomplete="name" placeholder="Como devemos chamar você?"></label>
+      <label class="reset-label">WhatsApp<input id="ps-phone" inputmode="tel" autocomplete="tel" placeholder="(00) 00000-0000"></label>
+    </div>
+    <div id="ps-deps"></div>
+    <p class="bk-hint">Ao enviar, seu pedido fica registrado e abrimos o WhatsApp para confirmar a assinatura e combinar o pagamento. O plano é ativado depois da confirmação do pagamento.</p>
+    <button id="ps-send" class="primary-btn full">Enviar pelo WhatsApp <span>↗</span></button>
+  </dialog>
   <div id="toast" class="toast" role="status"></div>
   <script src="store.js"></script>
   <script src="app.js" defer></script>

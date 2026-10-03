@@ -122,7 +122,7 @@
     getAppointment: id => fs.get('appointments', id),
     getClient: key => fs.get('clients', key),
     listClients: () => fs.list('clients'),
-    saveClient: c => fs.set('clients', c.id, c),
+    saveClient: c => fs.commit([{ col: 'clients', id: c.id, data: c }, touch()]),
     async createAppointment(appt) {
       const key = appt.clientId; const now = new Date().toISOString();
       const writes = [{ col: 'appointments', id: appt.id, data: appt, mustNotExist: true }, touch()];
@@ -167,7 +167,7 @@
       return { id: key, name: last.customerName, phone: last.phone, firstBookingAt: list[0].createdAt, lastBookingAt: last.createdAt };
     },
     async listClients() { return this.db().clients; },
-    async saveClient(c) { const d = this.db(); const i = d.clients.findIndex(x => x.id === c.id); if (i >= 0) d.clients[i] = c; else d.clients.push(c); writeLocal(d); },
+    async saveClient(c) { const d = this.db(); const i = d.clients.findIndex(x => x.id === c.id); if (i >= 0) d.clients[i] = c; else d.clients.push(c); d.syncAt = Date.now(); writeLocal(d); },
     async createAppointment(appt) {
       const d = this.db(); d.appointments.push(appt);
       if (appt.clientId) {
@@ -450,10 +450,51 @@
       if (dependents.length > dependentsAllowed) return fail(422, 'Há mais dependentes cadastrados do que a quantidade permitida no plano.');
       const old = await store.getClient(key); const prev = old && old.plan;
       const client = { ...(old || {}), id: key, name, phone, firstBookingAt: (old && old.firstBookingAt) || now, lastBookingAt: (old && old.lastBookingAt) || null,
-        plan: { active: body.active === undefined ? !(prev && prev.active === false) : Boolean(body.active), monthlyValue, planValue, cutsPerMonth, dependentsAllowed, dependents,
-          cuts: (prev && prev.cuts) || [], startedAt: (prev && prev.startedAt) || now.slice(0, 10), updatedAt: now } };
+        plan: { ...(prev || {}), active: body.active === undefined ? !(prev && prev.active === false) : Boolean(body.active), monthlyValue, planValue, cutsPerMonth, dependentsAllowed, dependents,
+          cuts: (prev && prev.cuts) || [], startedAt: (prev && prev.startedAt) || (prev && prev.status === 'pending_payment' ? null : now.slice(0, 10)), updatedAt: now } };
       await store.saveClient(client);
       return ok({ client }, prev ? 200 : 201);
+    }
+
+    /* ---------- Assinatura pelo site: cai em Planos mensais como "aguardando pagamento" ---------- */
+    if (method === 'POST' && url.pathname === '/api/plan-requests') {
+      const core = await getCore(store, true);
+      const cfg = normalizePlan(core.config && core.config.monthlyPlan);
+      if (!cfg.enabled || cfg.monthlyValue <= 0) return fail(422, 'O plano mensal não está disponível no momento.');
+      const name = String(body.name || '').trim().slice(0, 80);
+      const phone = String(body.phone || '').replace(/\D/g, '').slice(0, 15); const key = phoneKey(phone);
+      if (name.length < 2) return fail(422, 'Informe o nome completo.');
+      if (key.length < 10) return fail(422, 'Informe um WhatsApp válido com DDD.');
+      const cuts = planInt(body.cuts, null);
+      if (cuts === null || cuts < cfg.includedCuts || cuts > 60) return fail(422, `Escolha entre ${cfg.includedCuts} e 60 cortes por mês.`);
+      const rawDeps = Array.isArray(body.dependents) ? body.dependents : [];
+      if (rawDeps.length > cfg.maxDependents) return fail(422, `Este plano aceita até ${cfg.maxDependents} dependentes.`);
+      if (rawDeps.some(d => String(d.name || '').trim().length < 2)) return fail(422, 'Informe o nome de cada dependente.');
+      const dependents = rawDeps.map(d => ({ id: uuid(), name: String(d.name).trim().slice(0, 80), phone: String(d.phone || '').replace(/\D/g, '').slice(0, 15) }));
+      if (dependents.some(d => d.phone && d.phone.length < 10)) return fail(422, 'Informe um WhatsApp válido com DDD para o dependente (ou deixe em branco).');
+      const extra = cuts - cfg.includedCuts;
+      const planValue = money(cfg.monthlyValue + dependents.length * cfg.dependentValue + extra * cfg.extraCutValue);
+      const old = await store.getClient(key); const prev = old && old.plan; const now = new Date().toISOString();
+      if (prev && prev.status !== 'pending_payment' && prev.active !== false) return fail(409, 'Este WhatsApp já possui um plano mensal ativo. Fale com a barbearia pelo WhatsApp para alterar.');
+      const client = { ...(old || {}), id: key, name: (old && old.name) || name, phone, firstBookingAt: (old && old.firstBookingAt) || now, lastBookingAt: (old && old.lastBookingAt) || null,
+        plan: { ...(prev || {}), active: false, status: 'pending_payment', source: 'site', planName: cfg.name, monthlyValue: cfg.monthlyValue, planValue, cutsPerMonth: cuts, includedCuts: cfg.includedCuts,
+          extraCutValue: cfg.extraCutValue, dependentValue: cfg.dependentValue, dependentsAllowed: dependents.length, dependents, cuts: (prev && prev.cuts) || [],
+          startedAt: (prev && prev.startedAt) || null, requestedAt: now, updatedAt: now } };
+      await store.saveClient(client);
+      return ok({ client, whatsapp: core.config.whatsapp, planValue }, 201);
+    }
+
+    /* Admin: confirma o pagamento (ativa) ou recusa o pedido */
+    if ((m = url.pathname.match(/^\/api\/clients\/(\d+)\/plan\/(confirm|reject)$/)) && method === 'POST') {
+      const old = await store.getClient(m[1]);
+      if (!old || !old.plan || old.plan.status !== 'pending_payment') return fail(404, 'Não há plano aguardando pagamento para este cliente.');
+      const plan = old.plan; const now = new Date().toISOString();
+      if (m[2] === 'confirm') {
+        plan.status = 'active'; plan.active = true; plan.paidAt = now; plan.startedAt = dateISO(new Date()); plan.updatedAt = now;
+      } else if ((plan.cuts || []).length) { delete plan.status; plan.active = false; plan.updatedAt = now; }
+      else delete old.plan;
+      await store.saveClient(old);
+      return ok({ client: old, removed: !old.plan });
     }
 
     if ((m = url.pathname.match(/^\/api\/clients\/(\d+)\/plan\/cuts(?:\/([^/]+))?$/)) && ['POST', 'DELETE'].includes(method)) {
@@ -465,6 +506,7 @@
         plan.cuts = plan.cuts.filter(c => c.id !== m[2]); await store.saveClient(old);
         return ok({ client: old });
       }
+      if (plan.status === 'pending_payment') return fail(422, 'Este plano aguarda a confirmação do pagamento.');
       if (plan.active === false) return fail(422, 'Este plano está inativo.');
       const date = String(body.date || '');
       if (!validDate(date)) return fail(422, 'Informe a data do corte.');

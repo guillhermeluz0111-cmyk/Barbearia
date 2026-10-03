@@ -308,6 +308,7 @@ function wirePublic() {
   window.addEventListener('resize', updateScrollHint);
   $$('[data-scroll]').forEach(button => button.addEventListener('click', () => $('#booking').scrollIntoView({ behavior: 'smooth' })));
   $$('.dialog-close').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
+  $('#ps-send').addEventListener('click', sendPlanSignup);
   wireClientStep();
 }
 
@@ -351,7 +352,7 @@ function renderDashboard() {
     const label = index === 0 ? 'Hoje' : index === 1 ? 'Amanhã' : '3º dia';
     return `<div class="day-column ${index === 0 ? 'today' : ''}"><h4>${label}</h4><small>${shortDate(date)}</small>${items.length ? items.map(appointmentCard).join('') : '<div class="empty-admin">Agenda livre.</div>'}</div>`;
   }).join('');
-  $('#admin-dashboard').innerHTML = `<div class="metrics-grid">${metrics.map(item => `<div class="metric-card ${item[3] ? 'accent' : ''}"><small>${item[0]}</small><strong>${item[1]}</strong><span>${item[2]}</span></div>`).join('')}</div>
+  $('#admin-dashboard').innerHTML = `<div class="metrics-grid">${metrics.map(item => `<div class="metric-card ${item[3] ? 'accent' : ''} ${item[4] ? 'alert' : ''}"><small>${item[0]}</small><strong>${item[1]}</strong><span>${item[2]}</span></div>`).join('')}</div>
     <div class="panel-card pending-panel"><div class="panel-header"><div><h3>AGENDAMENTOS AGUARDANDO CONFIRMAÇÃO</h3><p>Reservas feitas pelo site que ainda precisam da sua aprovação</p></div><span class="pending-count">${String(pending.length).padStart(2, '0')}</span></div><div class="pending-list">${pending.length ? pending.map(appointmentCard).join('') : '<div class="empty-admin">Nenhuma confirmação pendente.</div>'}</div></div>
     <div class="panel-card"><div class="panel-header"><h3>PRÓXIMOS ATENDIMENTOS</h3><p>Clique para ver detalhes e ações</p></div><div class="day-columns">${days}</div></div>`;
   wireAppointmentCards($('#admin-dashboard'));
@@ -422,6 +423,43 @@ function wirePlanConfig(root) {
   });
 }
 
+/* ---------- Plano mensal: assinatura pelo site ---------- */
+function planSignupMessage(plan, client, dependents, total, extraCuts) {
+  const deps = dependents.length ? dependents.map(d => `${d.name}${d.phone ? ` (${phoneFmt(d.phone)})` : ''}`).join(', ') : 'nenhum';
+  return `Olá! Quero assinar o ${plan.name}.\n\nNome: ${client.name}\nWhatsApp: ${phoneFmt(client.phone)}\nCortes por mês: ${planPick.cuts}${extraCuts ? ` (${extraCuts} acima do mínimo de ${plan.includedCuts})` : ''}\nDependentes: ${deps}\nValor mensal: ${BRL.format(total)}\n\nAguardo as instruções para o pagamento e a confirmação da assinatura.`;
+}
+function openPlanSignup() {
+  const plan = planOf(); const total = planTotal(plan, planPick.deps, planPick.cuts);
+  $('#plan-signup-sum').innerHTML = `<b>${esc(plan.name)}</b> · ${planPick.cuts} ${planPick.cuts === 1 ? 'corte' : 'cortes'}/mês · ${planPick.deps} ${planPick.deps === 1 ? 'dependente' : 'dependentes'} · <b>${BRL.format(total)}</b>/mês`;
+  $('#ps-deps').innerHTML = Array.from({ length: planPick.deps }, (_, i) => `<div class="ps-dep"><small>Dependente ${i + 1}</small><div class="two-cols">
+      <label class="reset-label">Nome<input data-ps-dep-name autocomplete="off" placeholder="Nome do dependente"></label>
+      <label class="reset-label">WhatsApp <em>(opcional)</em><input data-ps-dep-phone inputmode="tel" autocomplete="off" placeholder="(00) 00000-0000"></label></div></div>`).join('');
+  $$('#plan-signup-dialog [data-ps-dep-phone], #ps-phone').forEach(input => { input.oninput = () => formatPhoneInput(input); });
+  $('#plan-signup-dialog').showModal();
+}
+async function sendPlanSignup() {
+  const button = $('#ps-send'); if (button.disabled) return;
+  const plan = planOf(); const name = $('#ps-name').value.trim(); const phone = $('#ps-phone').value;
+  if (name.split(/\s+/).filter(Boolean).length < 2) { $('#ps-name').focus(); return toast('Informe o nome completo.'); }
+  if (phoneKey(phone).length < 10) { $('#ps-phone').focus(); return toast('Informe um WhatsApp válido com DDD.'); }
+  const rows = $$('#ps-deps .ps-dep'); const dependents = [];
+  for (const row of rows) {
+    const depName = $('[data-ps-dep-name]', row).value.trim(); const depPhone = $('[data-ps-dep-phone]', row).value;
+    if (depName.length < 2) { $('[data-ps-dep-name]', row).focus(); return toast('Informe o nome de cada dependente.'); }
+    if (depPhone && phoneKey(depPhone).length < 10) { $('[data-ps-dep-phone]', row).focus(); return toast('WhatsApp do dependente incompleto: informe com DDD ou deixe em branco.'); }
+    dependents.push({ name: depName, phone: depPhone });
+  }
+  button.disabled = true;
+  try {
+    const result = await api('/api/plan-requests', { method: 'POST', body: JSON.stringify({ name, phone, cuts: planPick.cuts, dependents }) });
+    $('#plan-signup-dialog').close();
+    const extraCuts = planPick.cuts - plan.includedCuts;
+    showMessage(result.whatsapp, planSignupMessage(plan, { name, phone }, dependents, result.planValue, extraCuts));
+    toast('Pedido registrado. Envie a mensagem para confirmar a assinatura.');
+  } catch (error) { toast(error.message); }
+  finally { button.disabled = false; }
+}
+
 /* ---------- Plano mensal: box público (abaixo do agendamento) ---------- */
 const planPick = { deps: 0, cuts: null };
 function renderPlanBox() {
@@ -462,8 +500,7 @@ function renderPlanBox() {
   $$('[data-plan-step]').forEach(button => button.addEventListener('click', () => {
     planPick[button.dataset.planStep] += Number(button.dataset.dir); renderPlanBox();
   }));
-  $('#plan-interest').addEventListener('click', () => showMessage(state.data.config.whatsapp,
-    `Olá! Tenho interesse no ${plan.name}.\n\nCortes por mês: ${planPick.cuts}${extraCuts ? ` (${extraCuts} acima do mínimo de ${plan.includedCuts})` : ''}\nDependentes: ${planPick.deps}\nValor mensal: ${BRL.format(total)}\n\nPode me passar mais informações?`));
+  $('#plan-interest').addEventListener('click', openPlanSignup);
 }
 
 /* Apagar serviço ou produto do catálogo (agendamentos antigos mantêm o registro do que foi feito) */
@@ -733,7 +770,8 @@ function syncClientHash() {
 
 
 /* ---------- Planos mensais (dados ficam no cadastro do cliente: clients/{telefone}.plan) ---------- */
-const planClients = () => (state.data.clients || []).filter(item => item.plan).sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt-BR'));
+const isPending = item => Boolean(item.plan && item.plan.status === 'pending_payment');
+const planClients = () => (state.data.clients || []).filter(item => item.plan).sort((a, b) => (isPending(b) - isPending(a)) || String(a.name).localeCompare(String(b.name), 'pt-BR'));
 const cutsInMonth = (client, month) => ((client.plan && client.plan.cuts) || []).filter(cut => cut.date.slice(0, 7) === month);
 const planKeyOf = phone => phoneKey(phone);
 const waNumber = phone => { const d = String(phone || '').replace(/\D/g, ''); return d.length <= 11 ? `55${d}` : d; };
@@ -742,23 +780,25 @@ const keepPlanOpen = key => $$(`.plan-card[data-plan="${key}"]`).forEach(el => e
 function renderPlans() {
   const root = $('#admin-plans'); if (!root) return;
   const list = planClients(); const month = todayISO().slice(0, 7);
-  const active = list.filter(item => item.plan.active !== false);
+  const pending = list.filter(isPending);
+  const active = list.filter(item => !isPending(item) && item.plan.active !== false);
   const revenue = active.reduce((sum, item) => sum + (item.plan.planValue || 0), 0);
   const cuts = active.reduce((sum, item) => sum + cutsInMonth(item, month).length, 0);
   const deps = list.reduce((sum, item) => sum + (item.plan.dependents || []).length, 0);
   const metrics = [
     ['Receita mensal dos planos', BRL.format(revenue), `${active.length} ${active.length === 1 ? 'plano ativo' : 'planos ativos'}`, true],
-    ['Planos cadastrados', String(list.length).padStart(2, '0'), `${list.length - active.length} inativo(s)`],
+    ['Planos cadastrados', String(list.length).padStart(2, '0'), `${list.length - active.length - pending.length} inativo(s)`],
     ['Cortes no mês', String(cuts).padStart(2, '0'), 'realizados pelos planos ativos'],
-    ['Dependentes', String(deps).padStart(2, '0'), 'cadastrados nos planos']
+    ['Aguardando pagamento', String(pending.length).padStart(2, '0'), `${deps} dependente(s) nos planos`, false, pending.length > 0]
   ];
   const card = item => {
     const plan = item.plan; const used = cutsInMonth(item, month).length; const limit = plan.cutsPerMonth || 0;
     const pct = limit ? Math.min(100, Math.round(used / limit * 100)) : 0; const over = limit && used > limit;
     const history = (plan.cuts || []).slice().sort((a, b) => `${b.date}${b.createdAt}`.localeCompare(`${a.date}${a.createdAt}`)).slice(0, 15);
     const depList = plan.dependents || [];
-    return `<article class="plan-card ${plan.active === false ? 'off' : ''}" data-plan="${esc(item.id)}">
-      <div class="appointment-head"><strong>${esc(item.name)}</strong><span class="status-pill ${plan.active === false ? 'no_show' : 'attended'}">${plan.active === false ? 'Inativo' : 'Ativo'}</span></div>
+    const wait = isPending(item);
+    return `<article class="plan-card ${wait ? 'pending' : plan.active === false ? 'off' : ''}" data-plan="${esc(item.id)}">
+      <div class="appointment-head"><strong>${esc(item.name)}</strong><span class="status-pill ${wait ? 'pending_confirmation' : plan.active === false ? 'no_show' : 'attended'}">${wait ? 'Aguardando pagamento' : plan.active === false ? 'Inativo' : 'Ativo'}</span></div>
       <div class="plan-stats">
         <div><small>Telefone</small><b>${esc(phoneFmt(item.phone))}</b></div>
         <div><small>Plano mensal</small><b>${BRL.format(plan.monthlyValue || 0)}</b></div>
@@ -767,14 +807,18 @@ function renderPlans() {
         <div><small>Dependentes</small><b>${depList.length}<em>/${plan.dependentsAllowed || 0}</em></b></div>
       </div>
       <div class="appointment-details plan-details">
+        ${wait ? `<div class="plan-block"><small>Pedido feito pelo site${plan.requestedAt ? ` em ${regDate(plan.requestedAt)}` : ''}</small><p class="muted">Cortes acima do mínimo: ${Math.max(0, (plan.cutsPerMonth || 0) - (plan.includedCuts || plan.cutsPerMonth || 0))} · Combine o pagamento com o cliente no WhatsApp e confirme aqui para ativar o plano.</p></div>` : ''}
         <div class="plan-block"><small>Dependentes cadastrados</small>${depList.length ? `<div class="chips">${depList.map(dep => `<span class="chip dep-chip"><b>${esc(dep.name)}</b>${dep.phone ? `<a href="https://wa.me/${esc(waNumber(dep.phone))}" target="_blank" rel="noopener">${esc(phoneFmt(dep.phone))} ↗</a>` : '<em>sem WhatsApp</em>'}</span>`).join('')}</div>` : '<p class="muted">Nenhum dependente cadastrado.</p>'}</div>
         <div class="plan-block"><small>Cortes registrados ${history.length ? `· últimos ${history.length}` : ''}</small>
           ${history.length ? history.map(cut => `<div class="cut-line"><span>${dateFmt(cut.date)}</span><b>${cut.dependentName ? `Dependente: ${esc(cut.dependentName)}` : 'Titular'}</b><button class="mini-btn danger" data-plan-action="remove-cut" data-cut="${esc(cut.id)}">Remover</button></div>`).join('') : '<p class="muted">Nenhum corte registrado ainda.</p>'}</div>
         <div class="action-row">
-          <button class="mini-btn confirm" data-plan-action="cut" ${plan.active === false ? 'disabled' : ''}>Registrar corte</button>
+          ${wait ? `<button class="mini-btn confirm" data-plan-action="confirm">Confirmar pagamento</button>
+          <button class="mini-btn" data-plan-action="charge">Chamar no WhatsApp</button>
+          <button class="mini-btn" data-plan-action="edit">Editar plano</button>
+          <button class="mini-btn danger" data-plan-action="reject">Recusar pedido</button>` : `<button class="mini-btn confirm" data-plan-action="cut" ${plan.active === false ? 'disabled' : ''}>Registrar corte</button>
           <button class="mini-btn" data-plan-action="send">Enviar no WhatsApp</button>
           <button class="mini-btn" data-plan-action="edit">Editar plano</button>
-          <button class="mini-btn ${plan.active === false ? '' : 'danger'}" data-plan-action="toggle">${plan.active === false ? 'Reativar' : 'Desativar'}</button>
+          <button class="mini-btn ${plan.active === false ? '' : 'danger'}" data-plan-action="toggle">${plan.active === false ? 'Reativar' : 'Desativar'}</button>`}
         </div>
       </div>
     </article>`;
@@ -782,6 +826,8 @@ function renderPlans() {
   root.innerHTML = `<div class="metrics-grid">${metrics.map(item => `<div class="metric-card ${item[3] ? 'accent' : ''}"><small>${item[0]}</small><strong>${item[1]}</strong><span>${item[2]}</span></div>`).join('')}</div>
     <div class="panel-card"><div class="panel-header"><div><h3>CLIENTES COM PLANO MENSAL</h3><p>Clique em um plano para ver dependentes e cortes · o plano fica salvo no cadastro do cliente</p></div><button class="primary-btn small" id="plan-new">Novo plano <span>+</span></button></div>
       ${list.length ? list.map(card).join('') : '<div class="empty-admin">Nenhum plano mensal cadastrado. Use “Novo plano” para começar.</div>'}</div>`;
+  const nav = $('.admin-nav[data-admin-tab="plans"]');
+  if (nav) { $$('.nav-badge', nav).forEach(el => el.remove()); if (pending.length) nav.insertAdjacentHTML('beforeend', `<b class="nav-badge" title="Aguardando pagamento">${pending.length}</b>`); }
   $('#plan-new').addEventListener('click', () => openPlanDialog(null));
   $$('.plan-card', root).forEach(el => el.addEventListener('click', event => {
     if (event.target.closest('a')) return event.stopPropagation();
@@ -797,6 +843,9 @@ function planAction(key, action, cutId) {
   if (action === 'cut') return openCutDialog(client);
   if (action === 'toggle') return togglePlan(client);
   if (action === 'send') return showMessage(client.phone, planMessage(client));
+  if (action === 'charge') return showMessage(client.phone, pendingMessage(client));
+  if (action === 'confirm') return confirmPlanPayment(client);
+  if (action === 'reject') return rejectPlan(client);
   if (action === 'remove-cut') return removeCut(client, cutId);
 }
 
@@ -804,6 +853,24 @@ function planMessage(client) {
   const plan = client.plan; const business = (state.data.config && state.data.config.businessName) || 'nossa barbearia';
   const deps = plan.dependents || [];
   return `Olá, ${client.name.split(' ')[0]}! Seu plano mensal na ${business} está cadastrado.\n\nPlano mensal: ${BRL.format(plan.monthlyValue || 0)}\nValor do plano: ${BRL.format(plan.planValue || 0)}\nCortes por mês: ${plan.cutsPerMonth}\nDependentes: ${deps.length ? deps.map(dep => dep.name).join(', ') : 'nenhum'}\n\nQualquer dúvida, é só chamar!`;
+}
+
+function pendingMessage(client) {
+  const plan = client.plan; const business = (state.data.config && state.data.config.businessName) || 'nossa barbearia'; const deps = plan.dependents || [];
+  return `Olá, ${client.name.split(' ')[0]}! Recebemos seu pedido do ${plan.planName || 'plano mensal'} na ${business}.\n\nCortes por mês: ${plan.cutsPerMonth}\nDependentes: ${deps.length ? deps.map(dep => dep.name).join(', ') : 'nenhum'}\nValor mensal: ${BRL.format(plan.planValue || 0)}\n\nPara ativar a assinatura, falta confirmar o pagamento. Como prefere pagar?`;
+}
+async function confirmPlanPayment(client) {
+  if (!confirm(`Confirmar o pagamento de ${client.name} (${BRL.format(client.plan.planValue || 0)}) e ativar o plano?`)) return;
+  try {
+    const { client: updated } = await api(`/api/clients/${client.id}/plan/confirm`, { method: 'POST', body: '{}' });
+    await reloadState(); renderAdmin(); keepPlanOpen(client.id); toast('Pagamento confirmado. Plano ativo.');
+    showMessage(updated.phone, planMessage(updated)); // avisa o cliente que o plano está ativo
+  } catch (error) { toast(error.message); }
+}
+async function rejectPlan(client) {
+  if (!confirm(`Recusar o pedido de plano de ${client.name}? Ele sai da lista de aguardando pagamento.`)) return;
+  try { await api(`/api/clients/${client.id}/plan/reject`, { method: 'POST', body: '{}' }); await reloadState(); renderAdmin(); toast('Pedido recusado.'); }
+  catch (error) { toast(error.message); }
 }
 
 const planDraft = { key: null, dependents: [] };
@@ -1019,9 +1086,12 @@ function rerenderAppointmentViews() {
 
 async function refreshLive() {
   const known = new Set(state.data.appointments.map(item => item.id));
+  const knownPlans = new Set(planClients().filter(isPending).map(item => item.id));
   await reloadState();
   const fresh = state.data.appointments.filter(item => !known.has(item.id));
+  const freshPlans = planClients().filter(item => isPending(item) && !knownPlans.has(item.id));
   rerenderAppointmentViews();
+  if (freshPlans.length && !fresh.length) return toast(freshPlans.length === 1 ? `Novo pedido de plano: ${freshPlans[0].name}` : `${freshPlans.length} novos pedidos de plano`);
   if (fresh.length === 1) toast(`Novo agendamento: ${fresh[0].customerName} · ${dateFmt(fresh[0].date)} às ${fresh[0].time}`);
   else if (fresh.length > 1) toast(`${fresh.length} novos agendamentos`);
 }

@@ -869,3 +869,18 @@ a.footer-link:hover{color:var(--orange)}
 .plan-total strong{font-family:var(--display);font-weight:400;font-size:40px;color:var(--orange);line-height:1}
 @media(max-width:900px){.plan-box{grid-template-columns:minmax(0,1fr)}.plan-perks{margin-top:22px}}
 @media(max-width:600px){.plan-wrap{margin-top:36px}.plan-info,.plan-build{padding:24px 20px}.plan-box{margin:0 -14px;border-left:0;border-right:0}.plan-heading{scroll-margin-top:84px}}
+
+
+/* ---------- Assinatura do plano: pedido pelo site ---------- */
+.plan-signup-sum{margin:-8px 0 18px;padding:12px 14px;background:#efe8da;border-left:3px solid var(--orange);font-size:12px;line-height:1.6}
+#plan-signup-dialog .reset-label{margin-bottom:12px}
+#plan-signup-dialog .reset-label input{letter-spacing:0;text-transform:none}
+#plan-signup-dialog .reset-label em{font-style:normal;color:#847d73}
+.ps-dep{margin:6px 0 2px;padding-top:12px;border-top:1px solid #d8d0c3}
+.ps-dep>small{display:block;font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--orange);margin-bottom:8px}
+#plan-signup-dialog .bk-hint{margin:12px 0 16px}
+@media(max-width:700px){#plan-signup-dialog .two-cols{grid-template-columns:1fr}}
+/* admin: pedidos aguardando pagamento */
+.plan-card.pending{border-left:4px solid var(--orange);background:#fff4e6}
+.metric-card.alert{outline:2px solid var(--orange);outline-offset:-2px}
+.nav-badge{float:right;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--orange);color:#fff;font-size:10px;line-height:20px;text-align:center}
