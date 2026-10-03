@@ -74,7 +74,7 @@
     </div>
     <div class="dep-box">
       <small class="dep-title">Dependentes cadastrados <b id="plan-deps-count"></b></small>
-      <div class="dep-add"><input id="plan-dep-input" autocomplete="off" placeholder="Nome do dependente"><input id="plan-dep-phone" inputmode="tel" autocomplete="off" placeholder="WhatsApp (00) 00000-0000"><button type="button" class="mini-btn confirm" id="plan-dep-add">Adicionar</button></div>
+      <div class="dep-add"><input id="plan-dep-input" autocomplete="off" placeholder="Nome do dependente"><input id="plan-dep-phone" inputmode="tel" autocomplete="off" placeholder="WhatsApp (opcional)"><button type="button" class="mini-btn confirm" id="plan-dep-add">Adicionar</button></div>
       <div id="plan-dep-list" class="chips"></div>
     </div>
     <button id="plan-save" class="primary-btn full">Salvar plano</button>
@@ -97,6 +97,7 @@
     <div class="item-fields" data-for="service">
       <label class="reset-label">Nome do serviço<input id="new-service-name" autocomplete="off" placeholder="Ex.: Degradê"></label>
       <label class="reset-label">Valor (R$)<input id="new-service-price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00"></label>
+      <label class="reset-label">Valor de custo (R$) <small>— opcional</small><input id="new-service-cost" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00"></label>
       <label class="reset-label">Duração (min) — define o tamanho do horário na agenda<input id="new-service-duration" type="number" min="5" step="5" inputmode="numeric" value="30"></label>
     </div>
     <div class="item-fields" data-for="product" hidden>
@@ -105,6 +106,7 @@
         <label class="reset-label">Valor de custo (R$)<input id="new-product-cost" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00"></label>
         <label class="reset-label">Valor de venda (R$)<input id="new-product-price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00"></label>
       </div>
+      <label class="reset-label">Quantidade<input id="new-product-quantity" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></label>
       <label class="reset-label">Descrição<textarea id="new-product-desc" rows="3" maxlength="200" placeholder="Fixação, acabamento, tamanho…"></textarea></label>
     </div>
     <button id="item-save" class="primary-btn full">Adicionar</button>
