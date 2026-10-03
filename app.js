@@ -1,6 +1,6 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const state = { data: null, selected: [], date: '', time: '', rescheduleId: null, rescheduleTime: '', clientKey: null, clientQuery: '', step: 1, saving: false, weekStart: 0 };
+const state = { data: null, selected: [], date: '', time: '', rescheduleId: null, rescheduleTime: '', clientKey: null, clientQuery: '', products: [], clientMode: '', foundName: '', autoName: '', lookingUp: false, step: 1, saving: false, weekStart: 0 };
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const dateFmt = value => value ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(`${value}T12:00:00Z`)) : '—';
 const shortDate = value => new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', weekday: 'short', day: '2-digit', month: 'short' }).format(new Date(`${value}T12:00:00Z`));
@@ -26,9 +26,15 @@ function toast(message) {
 function selectedServices() {
   return state.data.services.filter(item => state.selected.includes(item.id));
 }
-function totals() {
-  return selectedServices().reduce((acc, item) => ({ total: acc.total + item.price, duration: acc.duration + item.duration }), { total: 0, duration: 0 });
+function selectedProducts() {
+  return (state.data.products || []).filter(item => state.products.includes(item.id));
 }
+function totals() {
+  const base = selectedServices().reduce((acc, item) => ({ total: acc.total + item.price, duration: acc.duration + item.duration }), { total: 0, duration: 0 });
+  base.total += selectedProducts().reduce((sum, item) => sum + item.price, 0);
+  return base;
+}
+const prodLine = item => (item.products && item.products.length) ? `\nProdutos: ${item.products.map(p => p.name).join(' + ')}` : '';
 
 function renderServices() {
   $('#service-grid').innerHTML = state.data.services.map(item => {
@@ -40,6 +46,20 @@ function renderServices() {
     </button>`;
   }).join('');
   $$('[data-service]').forEach(button => button.addEventListener('click', () => toggleService(button.dataset.service)));
+  updateScrollHint();
+}
+
+function renderProducts() {
+  const list = (state.data.products || []).filter(item => item.active && item.price !== null && item.price !== undefined);
+  $('#product-grid').innerHTML = list.length ? list.map(item => `<button type="button" class="service-card ${state.products.includes(item.id) ? 'selected' : ''}" data-product="${esc(item.id)}">
+      <div><h4>${esc(item.name)}</h4><p>${esc(item.description || '')}</p></div>
+      <div><div class="service-check">✓</div><strong>${BRL.format(item.price)}</strong></div>
+    </button>`).join('') : '<p class="empty-note">Nenhum produto disponível no momento. Pode continuar.</p>';
+  $$('[data-product]').forEach(button => button.addEventListener('click', () => {
+    const id = button.dataset.product;
+    state.products = state.products.includes(id) ? state.products.filter(value => value !== id) : [...state.products, id];
+    renderProducts(); updateSummary();
+  }));
   updateScrollHint();
 }
 
@@ -67,11 +87,14 @@ const firstOpenDay = () => { for (let i = 0; i < 28; i++) if (dayAvailable(addDa
 const phoneDigits = () => $('#customer-phone').value.replace(/\D/g, '');
 const stepValid = n => n === 1 ? state.selected.length > 0
   : n === 2 ? Boolean(state.date && state.time)
-  : n === 3 ? $('#customer-name').value.trim().length >= 2 && phoneDigits().length >= 10 : true;
+  : n === 3 ? true
+  : n === 4 ? (state.clientMode === 'existing' ? phoneDigits().length >= 10 && Boolean(state.foundName) && !state.lookingUp
+    : state.clientMode === 'new' ? phoneDigits().length >= 10 && $('#customer-name').value.trim().length >= 2 && !state.lookingUp : false)
+  : true;
 const canGo = n => { for (let i = 1; i < n; i++) if (!stepValid(i)) return false; return true; };
 
 function goStep(n) {
-  if (n < 1 || n > 4 || !canGo(n)) return;
+  if (n < 1 || n > 5 || !canGo(n)) return;
   state.step = n;
   if (n === 2) {
     if (!state.date) { state.date = firstOpenDay(); state.time = ''; }
@@ -132,14 +155,16 @@ async function loadSlots() {
 }
 
 function renderReview() {
-  const services = selectedServices(); const sum = totals();
+  const services = selectedServices(); const products = selectedProducts(); const sum = totals();
   $('#bk-review').innerHTML = `
     <div class="rv-block"><div class="rv-title"><small>Serviços</small><button type="button" class="rv-edit" data-go="1">Alterar</button></div>
       ${services.map(item => `<div class="rv-line"><span>${esc(item.name)}</span><b>${BRL.format(item.price)}</b></div>`).join('')}</div>
     <div class="rv-block"><div class="rv-title"><small>Data e horário</small><button type="button" class="rv-edit" data-go="2">Alterar</button></div>
       <div class="rv-grid"><div><span>Data</span><b>${esc(shortDate(state.date))}</b></div><div><span>Horário</span><b>${esc(state.time)}</b></div><div><span>Duração</span><b>${minutesLabel(sum.duration)}</b></div></div></div>
-    <div class="rv-block"><div class="rv-title"><small>Seus dados</small><button type="button" class="rv-edit" data-go="3">Alterar</button></div>
-      <div class="rv-grid"><div><span>Nome</span><b>${esc($('#customer-name').value.trim())}</b></div><div><span>WhatsApp</span><b>${esc($('#customer-phone').value)}</b></div></div></div>
+    ${products.length ? `<div class="rv-block"><div class="rv-title"><small>Complementos</small><button type="button" class="rv-edit" data-go="3">Alterar</button></div>
+      ${products.map(item => `<div class="rv-line"><span>${esc(item.name)}</span><b>${BRL.format(item.price)}</b></div>`).join('')}</div>` : ''}
+    <div class="rv-block"><div class="rv-title"><small>Seus dados</small><button type="button" class="rv-edit" data-go="4">Alterar</button></div>
+      <div class="rv-grid"><div><span>Nome</span><b>${esc($('#customer-name').value.trim())}</b></div><div><span>WhatsApp</span><b>${esc($('#customer-phone').value)}</b></div><div><span>Cadastro</span><b>${state.clientMode === 'new' ? 'Novo cliente' : 'Cliente cadastrado'}</b></div></div></div>
     <div class="rv-total"><span>Total</span><strong>${BRL.format(sum.total)}</strong></div>
     <p class="bk-note">✓ Você confere a mensagem antes de enviar pelo WhatsApp.</p>`;
   $$('.rv-edit', $('#bk-review')).forEach(button => button.addEventListener('click', () => goStep(Number(button.dataset.go))));
@@ -153,34 +178,38 @@ function updateScrollHint() {
 function updateSummary() {
   const services = selectedServices(); const sum = totals();
   $('#summary-services').innerHTML = services.length ? services.map(item => `<div class="summary-service"><span>${esc(item.name)}</span><b>${BRL.format(item.price)}</b></div>`).join('') : '<p>Nenhum serviço selecionado.</p>';
+  const prods = selectedProducts(); const box = $('#summary-products');
+  box.hidden = !prods.length;
+  box.innerHTML = prods.map(item => `<div class="summary-service"><span>${esc(item.name)}</span><b>${BRL.format(item.price)}</b></div>`).join('');
   $('#summary-date').textContent = state.date ? dateFmt(state.date) : '—';
   $('#summary-time').textContent = state.time || '—';
   $('#summary-duration').textContent = sum.duration ? minutesLabel(sum.duration) : '—';
   $('#summary-total').textContent = BRL.format(sum.total);
   $('#bk-mini-total').textContent = BRL.format(sum.total);
-  $('#bk-mini-info').textContent = services.length ? `${services.length} ${services.length === 1 ? 'serviço' : 'serviços'} · ${minutesLabel(sum.duration)}` : 'Nenhum serviço';
+  $('#bk-mini-info').textContent = services.length ? `${services.length} ${services.length === 1 ? 'serviço' : 'serviços'}${prods.length ? ` · ${prods.length} ${prods.length === 1 ? 'produto' : 'produtos'}` : ''} · ${minutesLabel(sum.duration)}` : 'Nenhum serviço';
 
   $('#bk').dataset.step = state.step;
-  $('#bk-progress').style.width = `${state.step * 25}%`;
+  $('#bk-progress').style.width = `${state.step * 20}%`;
   $$('.bk-pane').forEach(pane => pane.classList.toggle('active', Number(pane.dataset.pane) === state.step));
   $$('#bk-steps li').forEach(item => {
-    const n = Number(item.dataset.go); const done = n !== state.step && n < 4 && canGo(n + 1);
+    const n = Number(item.dataset.go); const done = n !== state.step && n < 5 && canGo(n + 1);
     item.classList.toggle('active', n === state.step); item.classList.toggle('done', done); item.classList.toggle('locked', !canGo(n));
     item.querySelector('i').textContent = done ? '✓' : n;
   });
   const next = $('#bk-next');
-  next.innerHTML = state.step === 4 ? 'Confirmar e abrir WhatsApp <span>→</span>' : state.step === 3 ? 'Revisar <span>→</span>' : 'Continuar <span>→</span>';
+  next.innerHTML = state.step === 5 ? 'Confirmar e abrir WhatsApp <span>→</span>' : state.step === 4 ? 'Revisar <span>→</span>' : 'Continuar <span>→</span>';
   next.disabled = !stepValid(state.step) || state.saving;
+  if (state.step === 4) renderClientStep();
   $('#bk-back').style.visibility = state.step === 1 ? 'hidden' : 'visible';
-  if (state.step === 4) renderReview();
+  if (state.step === 5) renderReview();
   updateScrollHint();
 }
 
 function bookingMessage(appointment) {
-  return `Olá! Acabei de realizar um agendamento.\n\nNome: ${appointment.customerName}\nData: ${dateFmt(appointment.date)}\nHorário: ${appointment.time}\nServiços: ${appointment.services.map(item => item.name).join(' + ')}\nValor total: ${BRL.format(appointment.total)}\n\nAguardo a confirmação. Obrigado!`;
+  return `Olá! Acabei de realizar um agendamento.\n\nNome: ${appointment.customerName}\nData: ${dateFmt(appointment.date)}\nHorário: ${appointment.time}\nServiços: ${appointment.services.map(item => item.name).join(' + ')}${prodLine(appointment)}\nValor total: ${BRL.format(appointment.total)}\n\nAguardo a confirmação. Obrigado!`;
 }
 function reminderMessage(item) {
-  return `Olá, ${item.customerName.split(' ')[0]}! Passando para lembrar que você tem um agendamento na Willzinho Barber em ${dateFmt(item.date)} às ${item.time}.\n\nServiços: ${item.services.map(service => service.name).join(' + ')}\nValor: ${BRL.format(item.total)}\n\nTe esperamos!`;
+  return `Olá, ${item.customerName.split(' ')[0]}! Passando para lembrar que você tem um agendamento na Willzinho Barber em ${dateFmt(item.date)} às ${item.time}.\n\nServiços: ${item.services.map(service => service.name).join(' + ')}${prodLine(item)}\nValor: ${BRL.format(item.total)}\n\nTe esperamos!`;
 }
 function showMessage(phone, message) {
   $('#message-preview').value = message;
@@ -194,7 +223,7 @@ async function confirmBooking() {
   try {
     const result = await api('/api/appointments', { method: 'POST', body: JSON.stringify({
       customerName: $('#customer-name').value, phone: $('#customer-phone').value,
-      date: state.date, time: state.time, serviceIds: state.selected
+      date: state.date, time: state.time, serviceIds: state.selected, productIds: state.products
     }) });
     state.saving = false; resetBooking();
     showMessage(result.whatsapp, bookingMessage(result.appointment));
@@ -207,22 +236,73 @@ async function confirmBooking() {
 }
 
 function resetBooking() {
-  state.selected = []; state.date = ''; state.time = ''; state.step = 1; state.weekStart = 0;
-  $('#customer-name').value = ''; $('#customer-phone').value = ''; $('#booking-date').value = '';
-  renderServices(); $('#time-slots').innerHTML = ''; $('#day-strip').innerHTML = ''; updateSummary(); $('#bk-body').scrollTop = 0;
+  state.selected = []; state.products = []; state.clientMode = ''; state.foundName = ''; state.date = ''; state.time = ''; state.step = 1; state.weekStart = 0;
+  $('#customer-name').value = ''; $('#customer-phone').value = ''; $('#booking-date').value = ''; state.autoName = ''; $('#phone-hint').hidden = true;
+  renderServices(); renderProducts(); $('#time-slots').innerHTML = ''; $('#day-strip').innerHTML = ''; updateSummary(); $('#bk-body').scrollTop = 0;
+}
+
+/* Etapa 4: "já sou cliente" carrega o cadastro pelo WhatsApp; "novo cliente" pede o nome. */
+function renderClientStep() {
+  const mode = state.clientMode;
+  $$('[data-client-mode]').forEach(button => button.classList.toggle('active', button.dataset.clientMode === mode));
+  $('#client-fields').hidden = !mode;
+  $('#name-label').hidden = mode !== 'new';
+}
+function setHint(html) { const hint = $('#phone-hint'); hint.innerHTML = html; hint.hidden = !html; }
+
+let lookupTimer = null, lookupSeq = 0;
+function scheduleLookup(delay = 350) {
+  clearTimeout(lookupTimer); const mine = ++lookupSeq;
+  const name = $('#customer-name');
+  const clearAuto = () => { if (state.autoName && name.value.trim() === state.autoName) name.value = ''; state.autoName = ''; state.foundName = ''; };
+  if (!state.clientMode || phoneDigits().length < 10) { state.lookingUp = false; clearAuto(); setHint(''); updateSummary(); return; }
+  state.lookingUp = true; state.foundName = ''; updateSummary();
+  lookupTimer = setTimeout(async () => {
+    try {
+      const { client } = await api('/api/client?phone=' + encodeURIComponent(phoneDigits()));
+      if (mine !== lookupSeq) return; // o telefone mudou enquanto a busca rodava
+      state.lookingUp = false;
+      if (client) {
+        state.foundName = client.name; state.autoName = client.name; name.value = client.name;
+        const first = esc(client.name.split(' ')[0]);
+        setHint(state.clientMode === 'new'
+          ? `Este WhatsApp já tem cadastro, <b>${first}</b>! Entramos como cliente cadastrado.`
+          : `Olá, <b>${first}</b>! Encontramos seu cadastro.`);
+        state.clientMode = 'existing';
+      } else {
+        clearAuto();
+        setHint(state.clientMode === 'existing'
+          ? 'Não encontramos este número. <button type="button" class="link-btn" data-client-mode="new">Fazer meu cadastro</button>'
+          : '');
+      }
+    } catch (error) { if (mine !== lookupSeq) return; state.lookingUp = false; setHint('Não foi possível consultar agora. Tente novamente.'); }
+    updateSummary();
+  }, delay);
+}
+function setClientMode(mode) {
+  if (state.clientMode === mode) return;
+  const name = $('#customer-name');
+  if (state.autoName && name.value.trim() === state.autoName) name.value = '';
+  state.autoName = ''; state.foundName = ''; state.clientMode = mode; setHint('');
+  renderClientStep(); scheduleLookup(0);
+  setTimeout(() => (mode === 'new' && phoneDigits().length >= 10 ? name : $('#customer-phone')).focus(), 0);
+}
+function wireClientStep() {
+  $('#bk').addEventListener('click', event => { const button = event.target.closest('[data-client-mode]'); if (button) setClientMode(button.dataset.clientMode); });
+  $('#customer-phone').addEventListener('input', () => scheduleLookup());
 }
 
 function wirePublic() {
   $('#booking-date').min = todayISO();
   $('#booking-date').addEventListener('change', event => selectDate(event.target.value));
-  ['#customer-name', '#customer-phone'].forEach(selector => $(selector).addEventListener('input', updateSummary));
+  $('#customer-name').addEventListener('input', updateSummary);
   $('#customer-phone').addEventListener('input', event => {
     const digits = event.target.value.replace(/\D/g, '').slice(0, 11);
     event.target.value = digits.length > 6 ? `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}` : digits;
   });
-  $('#customer-name').addEventListener('keydown', event => { if (event.key === 'Enter') $('#customer-phone').focus(); });
-  $('#customer-phone').addEventListener('keydown', event => { if (event.key === 'Enter' && stepValid(3)) goStep(4); });
-  $('#bk-next').addEventListener('click', () => (state.step < 4 ? goStep(state.step + 1) : confirmBooking()));
+  $('#customer-phone').addEventListener('keydown', event => { if (event.key !== 'Enter') return; if (stepValid(4)) goStep(5); else if (state.clientMode === 'new') $('#customer-name').focus(); });
+  $('#customer-name').addEventListener('keydown', event => { if (event.key === 'Enter' && stepValid(4)) goStep(5); });
+  $('#bk-next').addEventListener('click', () => (state.step < 5 ? goStep(state.step + 1) : confirmBooking()));
   $('#bk-back').addEventListener('click', () => goStep(state.step - 1));
   $('#week-prev').addEventListener('click', () => shiftWeek(-1));
   $('#week-next').addEventListener('click', () => shiftWeek(1));
@@ -231,6 +311,7 @@ function wirePublic() {
   window.addEventListener('resize', updateScrollHint);
   $$('[data-scroll]').forEach(button => button.addEventListener('click', () => $('#booking').scrollIntoView({ behavior: 'smooth' })));
   $$('.dialog-close').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
+  wireClientStep();
 }
 
 function appointmentsFor(date) { return state.data.appointments.filter(item => item.date === date).sort((a, b) => a.time.localeCompare(b.time)); }
@@ -240,7 +321,7 @@ function appointmentCard(item) {
     : '<button class="mini-btn" data-action="remind">Lembrar</button><button class="mini-btn" data-action="attended">Compareceu</button><button class="mini-btn" data-action="reschedule">Reagendar</button><button class="mini-btn danger" data-action="no_show">Desistência</button>';
   return `<article class="appointment-card" data-appointment="${item.id}">
     <div class="appointment-head"><strong>${item.time} — ${esc(item.customerName)}</strong><span class="status-pill ${item.status}">${statusLabels[item.status] || item.status}</span></div>
-    <p>${esc(item.services.map(service => service.name).join(' + '))} · ${BRL.format(item.total)}</p>
+    <p>${esc(item.services.map(service => service.name).join(' + '))}${item.products && item.products.length ? ` <em class="prod-tag">+ ${esc(item.products.map(p => p.name).join(', '))}</em>` : ''} · ${BRL.format(item.total)}</p>
     <div class="appointment-details">
       <dl><div><dt>Telefone</dt><dd>${esc(item.phone)}</dd></div><div><dt>Duração</dt><dd>${minutesLabel(item.duration)}</dd></div><div><dt>Data</dt><dd>${dateFmt(item.date)}</dd></div><div><dt>Criado em</dt><dd>${new Date(item.createdAt).toLocaleDateString('pt-BR')}</dd></div></dl>
       <div class="action-row">${actions}</div>
@@ -286,9 +367,55 @@ function renderAgenda() {
 }
 
 function renderServiceAdmin() {
-  $('#admin-services').innerHTML = `<div class="panel-card"><div class="panel-header"><h3>CATÁLOGO DE SERVIÇOS</h3><p>As alterações refletem no site público</p></div><table class="data-table"><thead><tr><th>Serviço</th><th>Preço (R$)</th><th>Duração (min)</th><th>Visível</th><th></th></tr></thead><tbody>${state.data.services.map(item => `<tr data-service-row="${item.id}"><td><input data-field="name" value="${item.name}"></td><td><input data-field="price" type="number" min="0" step="0.01" value="${item.price ?? ''}" placeholder="A definir"></td><td><input data-field="duration" type="number" min="5" step="5" value="${item.duration ?? ''}" placeholder="A definir"></td><td><button class="toggle ${item.active ? 'on' : ''}" data-field="active" aria-label="Ativar ou desativar"></button></td><td><button class="mini-btn" data-save-service>Salvar</button></td></tr>`).join('')}</tbody></table></div>`;
-  $$('[data-field="active"]', $('#admin-services')).forEach(button => button.addEventListener('click', () => button.classList.toggle('on')));
-  $$('[data-save-service]', $('#admin-services')).forEach(button => button.addEventListener('click', () => saveService(button.closest('tr'))));
+  const root = $('#admin-services');
+  const products = state.data.products || [];
+  const margin = item => (item.price !== null && item.cost !== null && item.cost !== undefined) ? BRL.format(item.price - item.cost) : '—';
+  root.innerHTML = `<div class="panel-card"><div class="panel-header"><div><h3>CATÁLOGO DE SERVIÇOS</h3><p>As alterações refletem no site público</p></div><button class="primary-btn small" id="add-item">Adicionar <span>+</span></button></div>
+    <table class="data-table"><thead><tr><th>Serviço</th><th>Preço (R$)</th><th>Duração (min)</th><th>Visível</th><th></th></tr></thead><tbody>${state.data.services.map(item => `<tr data-service-row="${esc(item.id)}"><td><input data-field="name" value="${esc(item.name)}"></td><td><input data-field="price" type="number" min="0" step="0.01" value="${item.price ?? ''}" placeholder="A definir"></td><td><input data-field="duration" type="number" min="5" step="5" value="${item.duration ?? ''}" placeholder="A definir"></td><td><button class="toggle ${item.active ? 'on' : ''}" data-field="active" aria-label="Ativar ou desativar"></button></td><td><button class="mini-btn" data-save-service>Salvar</button></td></tr>`).join('')}</tbody></table></div>
+    <div class="panel-card"><div class="panel-header"><div><h3>CATÁLOGO DE PRODUTOS</h3><p>Aparecem como complementos na etapa 3 do agendamento · o custo só aparece aqui no painel</p></div></div>
+    ${products.length ? `<table class="data-table"><thead><tr><th>Produto</th><th>Custo (R$)</th><th>Venda (R$)</th><th>Lucro</th><th>Descrição</th><th>Visível</th><th></th></tr></thead><tbody>${products.map(item => `<tr data-product-row="${esc(item.id)}"><td><input data-field="name" value="${esc(item.name)}"></td><td><input data-field="cost" type="number" min="0" step="0.01" value="${item.cost ?? ''}"></td><td><input data-field="price" type="number" min="0" step="0.01" value="${item.price ?? ''}"></td><td><b>${margin(item)}</b></td><td><input data-field="description" value="${esc(item.description || '')}"></td><td><button class="toggle ${item.active ? 'on' : ''}" data-field="active" aria-label="Ativar ou desativar"></button></td><td><button class="mini-btn" data-save-product>Salvar</button></td></tr>`).join('')}</tbody></table>` : '<div class="empty-admin">Nenhum produto cadastrado. Use “Adicionar” para criar o primeiro.</div>'}
+    </div>`;
+  $$('[data-field="active"]', root).forEach(button => button.addEventListener('click', () => button.classList.toggle('on')));
+  $$('[data-save-service]', root).forEach(button => button.addEventListener('click', () => saveService(button.closest('tr'))));
+  $$('[data-save-product]', root).forEach(button => button.addEventListener('click', () => saveProduct(button.closest('tr'))));
+  $('#add-item').addEventListener('click', openItemDialog);
+}
+
+async function saveProduct(row) {
+  const payload = {
+    name: $('[data-field="name"]', row).value, cost: $('[data-field="cost"]', row).value, price: $('[data-field="price"]', row).value,
+    description: $('[data-field="description"]', row).value, active: $('[data-field="active"]', row).classList.contains('on')
+  };
+  try { await api(`/api/products/${row.dataset.productRow}`, { method: 'PUT', body: JSON.stringify(payload) }); await reloadState(); renderServiceAdmin(); toast('Produto atualizado.'); }
+  catch (error) { toast(error.message); }
+}
+
+/* Botão "Adicionar": serviço (nome e valor) ou produto (nome, custo, venda e descrição) */
+const itemDialog = { type: 'service' };
+function setItemType(type) {
+  itemDialog.type = type;
+  $$('[data-item-type]').forEach(button => button.classList.toggle('active', button.dataset.itemType === type));
+  $$('.item-fields').forEach(box => { box.hidden = box.dataset.for !== type; });
+  $('#item-save').textContent = type === 'service' ? 'Adicionar serviço' : 'Adicionar produto';
+}
+function openItemDialog() {
+  ['#new-service-name', '#new-service-price', '#new-product-name', '#new-product-cost', '#new-product-price', '#new-product-desc'].forEach(selector => { $(selector).value = ''; });
+  $('#new-service-duration').value = '30';
+  setItemType('service'); $('#item-dialog').showModal();
+}
+async function saveNewItem() {
+  const button = $('#item-save'); button.disabled = true;
+  try {
+    if (itemDialog.type === 'service') {
+      await api('/api/services', { method: 'POST', body: JSON.stringify({ name: $('#new-service-name').value, price: $('#new-service-price').value, duration: $('#new-service-duration').value, active: true }) });
+      toast('Serviço adicionado.');
+    } else {
+      await api('/api/products', { method: 'POST', body: JSON.stringify({ name: $('#new-product-name').value, cost: $('#new-product-cost').value, price: $('#new-product-price').value, description: $('#new-product-desc').value, active: true }) });
+      toast('Produto adicionado.');
+    }
+    $('#item-dialog').close(); await reloadState(); renderServiceAdmin();
+  } catch (error) { toast(error.message); }
+  finally { button.disabled = false; }
 }
 
 function renderHours() {
@@ -310,7 +437,7 @@ async function appointmentAction(id, action) {
       const result = await api(`/api/appointments/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'scheduled' }) });
       await reloadState(); renderAdmin();
       const confirmed = result.appointment;
-      showMessage(confirmed.phone, `Olá, ${confirmed.customerName.split(' ')[0]}! Seu agendamento está confirmado.\n\nData: ${dateFmt(confirmed.date)}\nHorário: ${confirmed.time}\nServiços: ${confirmed.services.map(service => service.name).join(' + ')}\nValor: ${BRL.format(confirmed.total)}\nDuração estimada: ${minutesLabel(confirmed.duration)}\n\nTe esperamos!`);
+      showMessage(confirmed.phone, `Olá, ${confirmed.customerName.split(' ')[0]}! Seu agendamento está confirmado.\n\nData: ${dateFmt(confirmed.date)}\nHorário: ${confirmed.time}\nServiços: ${confirmed.services.map(service => service.name).join(' + ')}${prodLine(confirmed)}\nValor: ${BRL.format(confirmed.total)}\nDuração estimada: ${minutesLabel(confirmed.duration)}\n\nTe esperamos!`);
       toast('Agendamento confirmado.');
     } catch (error) { toast(error.message); }
     return;
@@ -351,7 +478,7 @@ async function saveReschedule() {
     const result = await api(`/api/appointments/${item.id}/reschedule`, { method: 'PATCH', body: JSON.stringify({ date: $('#reschedule-date').value, time: state.rescheduleTime }) });
     $('#reschedule-dialog').close(); await reloadState(); renderAdmin();
     const updated = result.appointment;
-    showMessage(updated.phone, `Olá, ${updated.customerName.split(' ')[0]}! Seu agendamento foi reagendado.\n\nNova data: ${dateFmt(updated.date)}\nNovo horário: ${updated.time}\nServiços: ${updated.services.map(service => service.name).join(' + ')}\nValor: ${BRL.format(updated.total)}\n\nAté lá!`);
+    showMessage(updated.phone, `Olá, ${updated.customerName.split(' ')[0]}! Seu agendamento foi reagendado.\n\nNova data: ${dateFmt(updated.date)}\nNovo horário: ${updated.time}\nServiços: ${updated.services.map(service => service.name).join(' + ')}${prodLine(updated)}\nValor: ${BRL.format(updated.total)}\n\nAté lá!`);
     toast('Agendamento reagendado.');
   } catch (error) { toast(error.message); }
 }
@@ -386,7 +513,11 @@ const initials = name => String(name || '?').trim().split(/\s+/).slice(0, 2).map
 const stamp = item => `${item.date}${item.time}`;
 const daysBetween = (a, b) => Math.round((new Date(`${b}T12:00:00Z`) - new Date(`${a}T12:00:00Z`)) / 86400000);
 
+const cutValue = item => (item.services || []).reduce((sum, service) => sum + service.price, 0);
+const regDate = iso => iso ? new Date(iso).toLocaleDateString('pt-BR') : '—';
+
 function buildClients() {
+  const registry = new Map((state.data.clients || []).map(item => [item.id, item]));
   const map = new Map();
   state.data.appointments.slice().sort((a, b) => stamp(a).localeCompare(stamp(b))).forEach(item => {
     const key = phoneKey(item.phone) || item.customerName;
@@ -396,7 +527,9 @@ function buildClients() {
   });
   return [...map.values()].map(client => {
     const attended = client.appts.filter(item => item.status === 'attended');
-    return { ...client, attended, spent: attended.reduce((sum, item) => sum + item.total, 0), last: client.appts[client.appts.length - 1] };
+    const record = registry.get(phoneKey(client.phone));
+    const registeredAt = (record && record.firstBookingAt) || client.appts.map(item => item.createdAt).filter(Boolean).sort()[0] || '';
+    return { ...client, attended, registeredAt, lastCut: attended[attended.length - 1] || null, spent: attended.reduce((sum, item) => sum + item.total, 0), last: client.appts[client.appts.length - 1] };
   }).sort((a, b) => stamp(b.last).localeCompare(stamp(a.last)));
 }
 
@@ -427,9 +560,12 @@ function renderClients() {
     $('#client-rows').innerHTML = list.length ? list.map(client => `<button class="client-row" data-client="${esc(client.key)}">
       <span class="client-avatar">${esc(initials(client.name))}</span>
       <span class="client-main"><b>${esc(client.name)}</b><small>${esc(phoneFmt(client.phone))}</small></span>
-      <span class="client-col"><small>Último agendamento</small><b>${dateFmt(client.last.date)} · ${client.last.time}</b></span>
+      <span class="client-meta">
+        <span class="client-col"><small>Cadastro</small><b>${regDate(client.registeredAt)}</b></span>
+        <span class="client-col"><small>Último corte</small><b>${client.lastCut ? dateFmt(client.lastCut.date) : '—'}</b></span>
+        <span class="client-col"><small>Valor do corte</small><b>${client.lastCut ? BRL.format(cutValue(client.lastCut)) : '—'}</b></span>
+      </span>
       <span class="client-col hide-sm"><small>Atendimentos</small><b>${client.attended.length}<em>/${client.appts.length}</em></b></span>
-      <span class="client-col hide-sm"><small>Total gasto</small><b>${BRL.format(client.spent)}</b></span>
       <span class="client-arrow">→</span>
     </button>`).join('') : `<div class="empty-admin">${clients.length ? 'Nenhum cliente encontrado.' : 'Ainda não há clientes. Eles aparecem aqui após o primeiro agendamento.'}</div>`;
     $$('[data-client]', $('#client-rows')).forEach(button => button.addEventListener('click', () => openClient(button.dataset.client)));
@@ -454,8 +590,8 @@ function renderClientDetail(root, client) {
     ['Ticket médio', client.attended.length ? BRL.format(client.spent / client.attended.length) : '—', 'por atendimento'],
     ['Agendamentos', String(client.appts.length), noShows ? `${noShows} ${noShows === 1 ? 'desistência' : 'desistências'}` : 'nenhuma desistência'],
     ['Serviço favorito', services[0] ? esc(services[0].name) : '—', services[0] ? `${services[0].count}× agendado` : 'sem histórico'],
-    ['Cliente desde', dateFmt(client.appts[0].date), `${client.appts.length} ${client.appts.length === 1 ? 'registro' : 'registros'}`],
-    ['Última visita', lastAttended ? dateFmt(lastAttended.date) : '—', lastAttended ? `${daysBetween(lastAttended.date, today)} dias atrás` : 'ainda não compareceu'],
+    ['Cliente desde', regDate(client.registeredAt), 'data do cadastro'],
+    ['Último corte', lastAttended ? dateFmt(lastAttended.date) : '—', lastAttended ? `${BRL.format(cutValue(lastAttended))} · ${daysBetween(lastAttended.date, today)} dias atrás` : 'ainda não compareceu'],
     ['Próximo agendamento', upcoming ? dateFmt(upcoming.date) : '—', upcoming ? `às ${upcoming.time}` : 'nada marcado'],
     ['Intervalo médio', avgGap === null ? '—' : `${avgGap} dias`, avgGap === null ? 'precisa de 2+ visitas' : 'entre atendimentos']
   ];
@@ -497,6 +633,182 @@ function syncClientHash() {
   if (!match) return;
   state.clientKey = match[1] ? decodeURIComponent(match[1]) : null;
   setAdminTab('clients'); renderClients();
+}
+
+
+/* ---------- Planos mensais (dados ficam no cadastro do cliente: clients/{telefone}.plan) ---------- */
+const planClients = () => (state.data.clients || []).filter(item => item.plan).sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt-BR'));
+const cutsInMonth = (client, month) => ((client.plan && client.plan.cuts) || []).filter(cut => cut.date.slice(0, 7) === month);
+const planKeyOf = phone => phoneKey(phone);
+const waNumber = phone => { const d = String(phone || '').replace(/\D/g, ''); return d.length <= 11 ? `55${d}` : d; };
+const keepPlanOpen = key => $$(`.plan-card[data-plan="${key}"]`).forEach(el => el.classList.add('open'));
+
+function renderPlans() {
+  const root = $('#admin-plans'); if (!root) return;
+  const list = planClients(); const month = todayISO().slice(0, 7);
+  const active = list.filter(item => item.plan.active !== false);
+  const revenue = active.reduce((sum, item) => sum + (item.plan.planValue || 0), 0);
+  const cuts = active.reduce((sum, item) => sum + cutsInMonth(item, month).length, 0);
+  const deps = list.reduce((sum, item) => sum + (item.plan.dependents || []).length, 0);
+  const metrics = [
+    ['Receita mensal dos planos', BRL.format(revenue), `${active.length} ${active.length === 1 ? 'plano ativo' : 'planos ativos'}`, true],
+    ['Planos cadastrados', String(list.length).padStart(2, '0'), `${list.length - active.length} inativo(s)`],
+    ['Cortes no mês', String(cuts).padStart(2, '0'), 'realizados pelos planos ativos'],
+    ['Dependentes', String(deps).padStart(2, '0'), 'cadastrados nos planos']
+  ];
+  const card = item => {
+    const plan = item.plan; const used = cutsInMonth(item, month).length; const limit = plan.cutsPerMonth || 0;
+    const pct = limit ? Math.min(100, Math.round(used / limit * 100)) : 0; const over = limit && used > limit;
+    const history = (plan.cuts || []).slice().sort((a, b) => `${b.date}${b.createdAt}`.localeCompare(`${a.date}${a.createdAt}`)).slice(0, 15);
+    const depList = plan.dependents || [];
+    return `<article class="plan-card ${plan.active === false ? 'off' : ''}" data-plan="${esc(item.id)}">
+      <div class="appointment-head"><strong>${esc(item.name)}</strong><span class="status-pill ${plan.active === false ? 'no_show' : 'attended'}">${plan.active === false ? 'Inativo' : 'Ativo'}</span></div>
+      <div class="plan-stats">
+        <div><small>Telefone</small><b>${esc(phoneFmt(item.phone))}</b></div>
+        <div><small>Plano mensal</small><b>${BRL.format(plan.monthlyValue || 0)}</b></div>
+        <div><small>Valor do plano</small><b>${BRL.format(plan.planValue || 0)}</b></div>
+        <div><small>Cortes no mês</small><b class="${over ? 'over' : ''}">${used}<em>/${limit}</em></b><span class="plan-bar"><i style="width:${pct}%"></i></span></div>
+        <div><small>Dependentes</small><b>${depList.length}<em>/${plan.dependentsAllowed || 0}</em></b></div>
+      </div>
+      <div class="appointment-details plan-details">
+        <div class="plan-block"><small>Dependentes cadastrados</small>${depList.length ? `<div class="chips">${depList.map(dep => `<span class="chip dep-chip"><b>${esc(dep.name)}</b>${dep.phone ? `<a href="https://wa.me/${esc(waNumber(dep.phone))}" target="_blank" rel="noopener">${esc(phoneFmt(dep.phone))} ↗</a>` : '<em>sem WhatsApp</em>'}</span>`).join('')}</div>` : '<p class="muted">Nenhum dependente cadastrado.</p>'}</div>
+        <div class="plan-block"><small>Cortes registrados ${history.length ? `· últimos ${history.length}` : ''}</small>
+          ${history.length ? history.map(cut => `<div class="cut-line"><span>${dateFmt(cut.date)}</span><b>${cut.dependentName ? `Dependente: ${esc(cut.dependentName)}` : 'Titular'}</b><button class="mini-btn danger" data-plan-action="remove-cut" data-cut="${esc(cut.id)}">Remover</button></div>`).join('') : '<p class="muted">Nenhum corte registrado ainda.</p>'}</div>
+        <div class="action-row">
+          <button class="mini-btn confirm" data-plan-action="cut" ${plan.active === false ? 'disabled' : ''}>Registrar corte</button>
+          <button class="mini-btn" data-plan-action="edit">Editar plano</button>
+          <button class="mini-btn ${plan.active === false ? '' : 'danger'}" data-plan-action="toggle">${plan.active === false ? 'Reativar' : 'Desativar'}</button>
+        </div>
+      </div>
+    </article>`;
+  };
+  root.innerHTML = `<div class="metrics-grid">${metrics.map(item => `<div class="metric-card ${item[3] ? 'accent' : ''}"><small>${item[0]}</small><strong>${item[1]}</strong><span>${item[2]}</span></div>`).join('')}</div>
+    <div class="panel-card"><div class="panel-header"><div><h3>CLIENTES COM PLANO MENSAL</h3><p>Clique em um plano para ver dependentes e cortes · o plano fica salvo no cadastro do cliente</p></div><button class="primary-btn small" id="plan-new">Novo plano <span>+</span></button></div>
+      ${list.length ? list.map(card).join('') : '<div class="empty-admin">Nenhum plano mensal cadastrado. Use “Novo plano” para começar.</div>'}</div>`;
+  $('#plan-new').addEventListener('click', () => openPlanDialog(null));
+  $$('.plan-card', root).forEach(el => el.addEventListener('click', event => {
+    if (event.target.closest('a')) return event.stopPropagation();
+    const button = event.target.closest('[data-plan-action]');
+    if (!button) return el.classList.toggle('open');
+    event.stopPropagation(); planAction(el.dataset.plan, button.dataset.planAction, button.dataset.cut);
+  }));
+}
+
+function planAction(key, action, cutId) {
+  const client = planClients().find(item => item.id === key); if (!client) return;
+  if (action === 'edit') return openPlanDialog(client);
+  if (action === 'cut') return openCutDialog(client);
+  if (action === 'toggle') return togglePlan(client);
+  if (action === 'remove-cut') return removeCut(client, cutId);
+}
+
+const planDraft = { key: null, dependents: [] };
+const formatPhoneInput = input => {
+  const digits = input.value.replace(/\D/g, '').slice(0, 11);
+  input.value = digits.length > 6 ? `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}` : digits;
+};
+const newId = () => (crypto.randomUUID ? crypto.randomUUID() : 'd-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+
+function drawPlanDeps() {
+  const allowed = Number($('#plan-deps-allowed').value) || 0;
+  $('#plan-deps-count').textContent = `(${planDraft.dependents.length} de ${allowed})`;
+  $('#plan-dep-list').innerHTML = planDraft.dependents.length
+    ? planDraft.dependents.map(dep => `<span class="chip dep-chip"><b>${esc(dep.name)}</b>${dep.phone ? `<em>${esc(phoneFmt(dep.phone))}</em>` : '<em>sem WhatsApp</em>'}<button type="button" data-dep-remove="${esc(dep.id)}" aria-label="Remover ${esc(dep.name)}">×</button></span>`).join('')
+    : '<p class="muted">Nenhum dependente cadastrado.</p>';
+  $$('[data-dep-remove]', $('#plan-dep-list')).forEach(button => button.addEventListener('click', () => {
+    planDraft.dependents = planDraft.dependents.filter(dep => dep.id !== button.dataset.depRemove); drawPlanDeps();
+  }));
+}
+function openPlanDialog(client) {
+  const plan = client && client.plan;
+  planDraft.key = client ? client.id : null;
+  planDraft.dependents = plan ? (plan.dependents || []).map(dep => ({ ...dep })) : [];
+  $('#plan-dialog-title').textContent = client ? 'EDITAR PLANO' : 'NOVO PLANO';
+  $('#plan-name').value = client ? client.name : ''; $('#plan-phone').value = client ? phoneFmt(client.phone) : ''; $('#plan-phone').disabled = Boolean(client);
+  $('#plan-monthly').value = plan ? plan.monthlyValue : ''; $('#plan-value').value = plan ? plan.planValue : ''; $('#plan-value').dataset.touched = plan ? '1' : '';
+  $('#plan-cuts').value = plan ? plan.cutsPerMonth : ''; $('#plan-deps-allowed').value = plan ? plan.dependentsAllowed : 0;
+  $('#plan-dep-input').value = ''; $('#plan-dep-phone').value = ''; $('#plan-dialog-hint').hidden = true;
+  drawPlanDeps(); $('#plan-dialog').showModal();
+}
+function addPlanDependent() {
+  const input = $('#plan-dep-input'), phoneInput = $('#plan-dep-phone'); const name = input.value.trim(); const phone = phoneKey(phoneInput.value);
+  if (name.length < 2) { input.focus(); return toast('Informe o nome do dependente.'); }
+  if (phone.length < 10) { phoneInput.focus(); return toast('Informe o WhatsApp do dependente com DDD.'); }
+  const allowed = Number($('#plan-deps-allowed').value) || 0;
+  if (planDraft.dependents.length >= allowed) return toast('Aumente a quantidade de dependentes do plano para cadastrar mais um.');
+  if (planDraft.dependents.some(dep => phoneKey(dep.phone) === phone)) return toast('Já existe um dependente com este WhatsApp.');
+  planDraft.dependents.push({ id: newId(), name, phone }); input.value = ''; phoneInput.value = ''; drawPlanDeps(); input.focus();
+}
+/* Ao digitar o telefone de um plano novo, reaproveita nome de quem já é cliente */
+function lookupPlanClient() {
+  if (planDraft.key) return;
+  const key = phoneKey($('#plan-phone').value); const hint = $('#plan-dialog-hint');
+  if (key.length < 10) { hint.hidden = true; return; }
+  const known = (state.data.clients || []).find(item => item.id === key)
+    || (() => { const appt = state.data.appointments.find(item => phoneKey(item.phone) === key); return appt ? { name: appt.customerName, plan: null } : null; })();
+  if (!known) { hint.hidden = true; return; }
+  if (!$('#plan-name').value.trim()) $('#plan-name').value = known.name;
+  hint.textContent = known.plan ? 'Este cliente já tem plano mensal. Para alterar, use “Editar plano”.' : `Cliente já cadastrado: ${known.name}.`; hint.hidden = false;
+}
+async function savePlan() {
+  const button = $('#plan-save'); button.disabled = true;
+  const phone = $('#plan-phone').value; const key = planDraft.key || planKeyOf(phone);
+  if (!key || key.length < 10) { toast('Informe um telefone válido com DDD.'); button.disabled = false; return; }
+  const existing = (state.data.clients || []).find(item => item.id === key);
+  if (!planDraft.key && existing && existing.plan) { toast('Este cliente já tem plano mensal.'); button.disabled = false; return; }
+  try {
+    await api(`/api/clients/${key}/plan`, { method: 'PUT', body: JSON.stringify({
+      name: $('#plan-name').value, phone, monthlyValue: $('#plan-monthly').value, planValue: $('#plan-value').value,
+      cutsPerMonth: $('#plan-cuts').value, dependentsAllowed: $('#plan-deps-allowed').value, dependents: planDraft.dependents
+    }) });
+    $('#plan-dialog').close(); await reloadState(); renderAdmin(); keepPlanOpen(key); toast('Plano salvo no cadastro do cliente.');
+  } catch (error) { toast(error.message); }
+  finally { button.disabled = false; }
+}
+async function togglePlan(client) {
+  const plan = client.plan; const turnOff = plan.active !== false;
+  if (turnOff && !confirm(`Desativar o plano de ${client.name}? O histórico de cortes é mantido.`)) return;
+  try {
+    await api(`/api/clients/${client.id}/plan`, { method: 'PUT', body: JSON.stringify({ ...plan, name: client.name, phone: client.phone, active: !turnOff }) });
+    await reloadState(); renderAdmin(); keepPlanOpen(client.id); toast(turnOff ? 'Plano desativado.' : 'Plano reativado.');
+  } catch (error) { toast(error.message); }
+}
+
+const cutDraft = { key: null };
+function openCutDialog(client) {
+  cutDraft.key = client.id;
+  $('#cut-client').textContent = `${client.name} · ${phoneFmt(client.phone)}`;
+  $('#cut-date').value = todayISO(); $('#cut-date').max = todayISO();
+  $('#cut-who').innerHTML = `<option value="">Titular — ${esc(client.name)}</option>` + (client.plan.dependents || []).map(dep => `<option value="${esc(dep.id)}">Dependente — ${esc(dep.name)}${dep.phone ? ` · ${esc(phoneFmt(dep.phone))}` : ''}</option>`).join('');
+  $('#cut-dialog').showModal();
+}
+async function saveCut() {
+  const button = $('#cut-save'); button.disabled = true;
+  try {
+    const result = await api(`/api/clients/${cutDraft.key}/plan/cuts`, { method: 'POST', body: JSON.stringify({ date: $('#cut-date').value, dependentId: $('#cut-who').value || null }) });
+    $('#cut-dialog').close(); await reloadState(); renderAdmin();
+    $$(`.plan-card[data-plan="${cutDraft.key}"]`).forEach(el => el.classList.add('open'));
+    toast(result.overLimit ? 'Corte registrado — atenção: passou do limite de cortes do mês.' : 'Corte registrado.');
+  } catch (error) { toast(error.message); }
+  finally { button.disabled = false; }
+}
+async function removeCut(client, cutId) {
+  if (!confirm('Remover este corte do histórico do plano?')) return;
+  try {
+    await api(`/api/clients/${client.id}/plan/cuts/${encodeURIComponent(cutId)}`, { method: 'DELETE' });
+    await reloadState(); renderAdmin(); $$(`.plan-card[data-plan="${client.id}"]`).forEach(el => el.classList.add('open')); toast('Corte removido.');
+  } catch (error) { toast(error.message); }
+}
+function wirePlanDialogs() {
+  $('#plan-phone').addEventListener('input', () => { formatPhoneInput($('#plan-phone')); lookupPlanClient(); });
+  $('#plan-monthly').addEventListener('input', () => { if (!$('#plan-value').dataset.touched) $('#plan-value').value = $('#plan-monthly').value; });
+  $('#plan-value').addEventListener('input', () => { $('#plan-value').dataset.touched = '1'; });
+  $('#plan-deps-allowed').addEventListener('input', drawPlanDeps);
+  $('#plan-dep-add').addEventListener('click', addPlanDependent);
+  $('#plan-dep-phone').addEventListener('input', () => formatPhoneInput($('#plan-dep-phone')));
+  ['#plan-dep-input', '#plan-dep-phone'].forEach(selector => $(selector).addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); addPlanDependent(); } }));
+  $('#plan-save').addEventListener('click', savePlan);
+  $('#cut-save').addEventListener('click', saveCut);
 }
 
 
@@ -551,7 +863,7 @@ function renderPublicInfo() {
 function renderSystem() {
   const appointments = state.data.appointments.length; const clients = buildClients().length;
   $('#admin-system').innerHTML = `<div class="panel-card danger-zone">
-    <div class="panel-header"><div><h3>ZERAR DADOS</h3><p>Apaga todos os agendamentos e clientes e deixa o sistema como novo. Serviços, preços e horários de funcionamento são mantidos.</p></div></div>
+    <div class="panel-header"><div><h3>ZERAR DADOS</h3><p>Apaga todos os agendamentos e clientes (incluindo os planos mensais) e deixa o sistema como novo. Serviços, preços e horários de funcionamento são mantidos.</p></div></div>
     <div class="reset-stats"><div><strong>${appointments}</strong><span>${appointments === 1 ? 'agendamento' : 'agendamentos'}</span></div><div><strong>${clients}</strong><span>${clients === 1 ? 'cliente' : 'clientes'}</span></div></div>
     <button class="mini-btn danger" id="reset-open" ${appointments || clients ? '' : 'disabled'}>${appointments || clients ? 'Zerar dados…' : 'Sistema já está zerado'}</button>
   </div>`;
@@ -571,10 +883,10 @@ async function runReset() {
 }
 
 function renderAdmin() {
-  renderDashboard(); renderAgenda(); renderClients(); renderServiceAdmin(); renderHours(); renderSystem();
+  renderDashboard(); renderAgenda(); renderClients(); renderPlans(); renderServiceAdmin(); renderHours(); renderSystem();
 }
 function setAdminTab(tab) {
-  const titles = { dashboard: 'VISÃO GERAL', agenda: 'AGENDAMENTOS', clients: 'CLIENTES', services: 'SERVIÇOS', hours: 'HORÁRIOS', system: 'SISTEMA' };
+  const titles = { dashboard: 'VISÃO GERAL', agenda: 'AGENDAMENTOS', clients: 'CLIENTES', plans: 'PLANOS MENSAIS', services: 'SERVIÇOS', hours: 'HORÁRIOS', system: 'SISTEMA' };
   $$('.admin-nav').forEach(button => button.classList.toggle('active', button.dataset.adminTab === tab));
   $$('.admin-panel').forEach(panel => panel.classList.toggle('hidden', panel.id !== `admin-${tab}`));
   $('#admin-title').textContent = titles[tab];
@@ -588,7 +900,9 @@ function rerenderAppointmentViews() {
   const active = document.activeElement; const focusId = active && active.id;
   const caret = active && typeof active.selectionStart === 'number' ? [active.selectionStart, active.selectionEnd] : null;
   const scroller = window.scrollY;
-  renderDashboard(); renderAgenda(); renderClients(); renderSystem();
+  const openPlans = $$('.plan-card.open').map(card => card.dataset.plan);
+  renderDashboard(); renderAgenda(); renderClients(); renderSystem(); renderPlans();
+  openPlans.forEach(key => $$(`.plan-card[data-plan="${key}"]`).forEach(card => card.classList.add('open')));
   openCards.forEach(id => $$(`.appointment-card[data-appointment="${id}"]`).forEach(card => card.classList.add('open')));
   if (focusId && document.getElementById(focusId) && document.activeElement.id !== focusId) {
     const element = document.getElementById(focusId); element.focus();
@@ -638,10 +952,13 @@ async function init() {
       $$('.dialog-close').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
       $('#reset-confirm').addEventListener('input', event => { $('#reset-run').disabled = event.target.value.trim().toUpperCase() !== 'ZERAR'; });
       $('#reset-run').addEventListener('click', runReset);
+      wirePlanDialogs();
+      $$('[data-item-type]').forEach(button => button.addEventListener('click', () => setItemType(button.dataset.itemType)));
+      $('#item-save').addEventListener('click', saveNewItem);
       window.addEventListener('hashchange', syncClientHash); syncClientHash();
       startLive();
     } else {
-      renderServices(); updateSummary(); wirePublic(); renderPublicInfo();
+      renderServices(); renderProducts(); updateSummary(); wirePublic(); renderPublicInfo();
     }
   } catch (error) { document.body.innerHTML = `<main style="padding:40px"><h1>Não foi possível iniciar</h1><p>${error.message}</p></main>`; }
 }

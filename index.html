@@ -85,9 +85,10 @@
           <div class="bk-head">
             <ol class="bk-steps" id="bk-steps">
               <li data-go="1" class="active"><i>1</i><span>Serviços</span></li>
-              <li data-go="2" class="locked"><i>2</i><span>Data e horário</span></li>
-              <li data-go="3" class="locked"><i>3</i><span>Seus dados</span></li>
-              <li data-go="4" class="locked"><i>4</i><span>Confirmar</span></li>
+              <li data-go="2" class="locked"><i>2</i><span>Data e hora</span></li>
+              <li data-go="3" class="locked"><i>3</i><span>Complementos</span></li>
+              <li data-go="4" class="locked"><i>4</i><span>Cadastro</span></li>
+              <li data-go="5" class="locked"><i>5</i><span>Confirmar</span></li>
             </ol>
             <div class="bk-progress"><b id="bk-progress"></b></div>
           </div>
@@ -113,15 +114,28 @@
             </section>
 
             <section class="bk-pane" data-pane="3">
-              <h3>Seus dados</h3>
-              <p class="bk-hint">Usaremos o WhatsApp apenas para falar sobre este agendamento.</p>
-              <div class="form-grid">
-                <label>Nome completo<input id="customer-name" autocomplete="name" placeholder="Como devemos chamar você?"></label>
-                <label>WhatsApp<input id="customer-phone" inputmode="tel" autocomplete="tel" placeholder="(00) 00000-0000"></label>
-              </div>
+              <h3>Complementos</h3>
+              <p class="bk-hint">Quer levar algum produto? É opcional — pague junto com o atendimento.</p>
+              <div class="service-grid" id="product-grid"></div>
             </section>
 
             <section class="bk-pane" data-pane="4">
+              <h3>Seu cadastro</h3>
+              <p class="bk-hint">Você já é nosso cliente? Usaremos o WhatsApp apenas para falar sobre este agendamento.</p>
+              <div class="choice-row" role="group" aria-label="Tipo de cliente">
+                <button type="button" class="choice" data-client-mode="existing"><b>Já sou cliente</b><small>Carregar meus dados</small></button>
+                <button type="button" class="choice" data-client-mode="new"><b>Novo cliente</b><small>Fazer meu cadastro</small></button>
+              </div>
+              <div id="client-fields" hidden>
+                <div class="form-grid">
+                  <label>WhatsApp<input id="customer-phone" inputmode="tel" autocomplete="tel" placeholder="(00) 00000-0000"></label>
+                  <label id="name-label">Nome completo<input id="customer-name" autocomplete="name" placeholder="Como devemos chamar você?"></label>
+                </div>
+                <div id="phone-hint" class="phone-hint" role="status" hidden></div>
+              </div>
+            </section>
+
+            <section class="bk-pane" data-pane="5">
               <h3>Confira e confirme</h3>
               <p class="bk-hint">Se algo estiver errado, volte e altere antes de confirmar.</p>
               <div class="bk-review" id="bk-review"></div>
@@ -141,6 +155,7 @@
           <p class="summary-kicker">SEU AGENDAMENTO</p>
           <h3>Resumo</h3>
           <div id="summary-services" class="summary-services"><p>Nenhum serviço selecionado.</p></div>
+          <div id="summary-products" class="summary-products" hidden></div>
           <div class="summary-row"><span>Data</span><b id="summary-date">—</b></div>
           <div class="summary-row"><span>Horário</span><b id="summary-time">—</b></div>
           <div class="summary-row"><span>Duração</span><b id="summary-duration">—</b></div>

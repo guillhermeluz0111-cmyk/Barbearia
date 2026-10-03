@@ -3,9 +3,10 @@
 
      config/business        -> dados do negócio (nome, WhatsApp, intervalo dos horários)
      services/{id}          -> um documento por serviço
+     products/{id}          -> um documento por produto (nome, custo, venda, descrição)
      hours/{0..6}           -> um documento por dia da semana (0 = domingo)
      appointments/{id}      -> um documento por agendamento
-     clients/{telefone}     -> um documento por cliente
+     clients/{telefone}     -> um documento por cliente (inclui o plano mensal em `plan`: valores, dependentes e cortes)
      meta/sync              -> marcador de última mudança (o painel lê só este documento para saber se há novidade)
 
    O sistema nasce zerado: sem agendamentos e sem clientes. Só são criados os serviços e horários
@@ -42,7 +43,7 @@
     ];
     const labels = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
     const hours = labels.map((label, day) => ({ day, label, active: true, open: '10:00', close: day === 0 ? '13:00' : '20:00' }));
-    return { config: { businessName: 'Willzinho Barber', whatsapp: '5541999901208', slotInterval: 10 }, services, hours, appointments: [] };
+    return { config: { businessName: 'Willzinho Barber', whatsapp: '5541999901208', slotInterval: 10 }, services, hours, products: [], appointments: [] };
   }
 
   /* ---------- Firestore: codificação de valores ---------- */
@@ -124,18 +125,21 @@
   /* ---------- Adaptador Firestore (coleções separadas) ---------- */
   const fsStore = {
     async core() {
-      const [config, services, hours] = await Promise.all([fs.get('config', 'business'), fs.list('services'), fs.list('hours')]);
-      return { config: config || initialData().config, services: byOrder(services), hours: hours.sort((a, b) => a.day - b.day) };
+      const [config, services, hours, products] = await Promise.all([fs.get('config', 'business'), fs.list('services'), fs.list('hours'), fs.list('products').catch(() => [])]);
+      return { config: config || initialData().config, services: byOrder(services), hours: hours.sort((a, b) => a.day - b.day), products: byOrder(products) };
     },
     listAppointments: () => fs.list('appointments'),
     appointmentsByDate: date => fs.whereEq('appointments', 'date', date),
     getAppointment: id => fs.get('appointments', id),
+    getClient: key => fs.get('clients', key),
+    listClients: () => fs.list('clients'),
+    saveClient: c => fs.set('clients', c.id, c),
     async createAppointment(appt) {
       const key = appt.clientId; const now = new Date().toISOString();
       const writes = [{ col: 'appointments', id: appt.id, data: appt, mustNotExist: true }, touch()];
       if (key) {
         const old = await fs.get('clients', key);
-        writes.push({ col: 'clients', id: key, data: { id: key, name: appt.customerName, phone: appt.phone, firstBookingAt: (old && old.firstBookingAt) || now, lastBookingAt: now } });
+        writes.push({ col: 'clients', id: key, data: { ...(old || {}), id: key, name: appt.customerName, phone: appt.phone, firstBookingAt: (old && old.firstBookingAt) || now, lastBookingAt: now } });
       }
       await fs.commit(writes);
     },
@@ -145,6 +149,7 @@
     },
     async version() { const d = await fs.get('meta', 'sync'); return d ? String(d.updatedAt) : '0'; },
     saveService: s => fs.set('services', s.id, s),
+    saveProduct: p => fs.set('products', p.id, p),
     saveHour: h => fs.set('hours', String(h.day), h),
     async resetData() {
       const [appts, clients] = await Promise.all([fs.ids('appointments'), fs.ids('clients')]);
@@ -157,16 +162,34 @@
   const readLocal = () => { try { return JSON.parse(localStorage.getItem(LOCAL_KEY)); } catch (e) { return null; } };
   const writeLocal = db => { try { localStorage.setItem(LOCAL_KEY, JSON.stringify(db)); } catch (e) { /* ignore */ } };
   const localStore = {
-    db() { let db = readLocal(); if (!db) { db = initialData(); writeLocal(db); } db.appointments = db.appointments || []; return db; },
-    async core() { const d = this.db(); return { config: d.config, services: byOrder(d.services), hours: d.hours }; },
+    db() { let db = readLocal(); if (!db) { db = initialData(); writeLocal(db); } db.appointments = db.appointments || []; db.products = db.products || []; db.clients = db.clients || []; return db; },
+    async core() { const d = this.db(); return { config: d.config, services: byOrder(d.services), hours: d.hours, products: byOrder(d.products) }; },
     async listAppointments() { return this.db().appointments; },
     async appointmentsByDate(date) { return this.db().appointments.filter(a => a.date === date); },
     async getAppointment(id) { return this.db().appointments.find(a => a.id === id) || null; },
-    async createAppointment(appt) { const d = this.db(); d.appointments.push(appt); d.syncAt = Date.now(); writeLocal(d); },
+    async getClient(key) {
+      const saved = this.db().clients.find(c => c.id === key); if (saved) return saved;
+      const list = this.db().appointments.filter(a => a.clientId === key).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+      if (!list.length) return null;
+      const last = list[list.length - 1];
+      return { id: key, name: last.customerName, phone: last.phone, firstBookingAt: list[0].createdAt, lastBookingAt: last.createdAt };
+    },
+    async listClients() { return this.db().clients; },
+    async saveClient(c) { const d = this.db(); const i = d.clients.findIndex(x => x.id === c.id); if (i >= 0) d.clients[i] = c; else d.clients.push(c); writeLocal(d); },
+    async createAppointment(appt) {
+      const d = this.db(); d.appointments.push(appt);
+      if (appt.clientId) {
+        const now = new Date().toISOString(); const i = d.clients.findIndex(c => c.id === appt.clientId); const old = i >= 0 ? d.clients[i] : null;
+        const c = { ...(old || {}), id: appt.clientId, name: appt.customerName, phone: appt.phone, firstBookingAt: (old && old.firstBookingAt) || now, lastBookingAt: now };
+        if (i >= 0) d.clients[i] = c; else d.clients.push(c);
+      }
+      d.syncAt = Date.now(); writeLocal(d);
+    },
     async updateAppointment(appt) { const d = this.db(); const i = d.appointments.findIndex(a => a.id === appt.id); if (i >= 0) d.appointments[i] = appt; d.syncAt = Date.now(); writeLocal(d); },
     async saveService(s) { const d = this.db(); const i = d.services.findIndex(x => x.id === s.id); if (i >= 0) d.services[i] = s; else d.services.push(s); writeLocal(d); },
+    async saveProduct(p) { const d = this.db(); const i = d.products.findIndex(x => x.id === p.id); if (i >= 0) d.products[i] = p; else d.products.push(p); writeLocal(d); },
     async saveHour(h) { const d = this.db(); const i = d.hours.findIndex(x => x.day === h.day); if (i >= 0) d.hours[i] = h; writeLocal(d); },
-    async resetData() { const d = this.db(); const n = d.appointments.length; d.appointments = []; d.syncAt = Date.now(); writeLocal(d); return { appointments: n, clients: 0 }; },
+    async resetData() { const d = this.db(); const n = d.appointments.length, c = d.clients.length; d.appointments = []; d.clients = []; d.syncAt = Date.now(); writeLocal(d); return { appointments: n, clients: c }; },
     async version() { return String(this.db().syncAt || 0); }
   };
 
@@ -221,6 +244,10 @@
     const services = selectedServices(db, ids);
     return { services, total: money(services.reduce((n, s) => n + s.price, 0)), duration: services.reduce((n, s) => n + s.duration, 0) };
   }
+  function selectedProducts(db, ids) {
+    const unique = [...new Set(Array.isArray(ids) ? ids : [])];
+    return unique.map(id => (db.products || []).find(p => p.id === id)).filter(p => p && p.active && p.price !== null && p.price !== undefined);
+  }
   function conflicts(db, date, time, duration, ignoreId) {
     const start = toMin(time), end = start + duration;
     return db.appointments.some(a => a.id !== ignoreId && a.date === date && isBlocking(a) && start < endMin(a) && end > toMin(a.time));
@@ -250,7 +277,9 @@
     if (phone.length < 10) return { error: 'Informe um WhatsApp válido com DDD.' };
     if (!totals.services.length) return { error: 'Selecione ao menos um serviço disponível.' };
     if (!availability(db, date, totals.services.map(s => s.id), ignoreId).includes(time)) return { error: 'Este horário não está mais disponível.' };
-    return { customerName, phone, date, time, ...totals };
+    const products = selectedProducts(db, body.productIds);
+    const productsTotal = money(products.reduce((n, p) => n + p.price, 0));
+    return { customerName, phone, date, time, ...totals, products, total: money(totals.total + productsTotal) };
   }
 
   const ok = (data, status = 200) => ({ status, data });
@@ -273,7 +302,18 @@
     if (method === 'GET' && url.pathname === '/api/state') {
       const core = await getCore(store, true);
       const appointments = url.searchParams.get('appointments') === '1' ? (await store.listAppointments()).sort((a, b) => stamp(a).localeCompare(stamp(b))) : [];
-      return ok({ ...core, appointments });
+      const clients = url.searchParams.get('appointments') === '1' ? await store.listClients() : [];
+      const admin = url.searchParams.get('appointments') === '1';
+      const products = admin ? core.products : (core.products || []).map(({ cost, ...p }) => p);
+      return ok({ ...core, products, appointments, clients });
+    }
+
+    /* Busca de cliente pelo telefone (agendamento): devolve só o nome, nada além disso. */
+    if (method === 'GET' && url.pathname === '/api/client') {
+      const key = phoneKey(url.searchParams.get('phone'));
+      if (key.length < 10) return ok({ client: null });
+      const c = await store.getClient(key);
+      return ok({ client: c && c.name ? { name: c.name } : null });
     }
 
     if (method === 'GET' && url.pathname === '/api/sync') return ok({ version: await store.version() });
@@ -294,6 +334,8 @@
         id: uuid(), clientId: phoneKey(v.phone), customerName: v.customerName, phone: v.phone, date: v.date, time: v.time,
         serviceIds: v.services.map(s => s.id),
         services: v.services.map(({ id, name, price, duration }) => ({ id, name, price, duration })),
+        productIds: v.products.map(p => p.id),
+        products: v.products.map(({ id, name, price, cost }) => ({ id, name, price, cost: cost ?? null })),
         total: v.total, duration: v.duration, status: 'pending_confirmation',
         createdAt: new Date().toISOString(), history: []
       };
@@ -333,8 +375,74 @@
       service.duration = body.duration === null || body.duration === '' ? null : Math.max(5, Number(body.duration));
       service.active = Boolean(body.active) && service.price !== null && service.duration !== null;
       if (!service.name) return fail(422, 'Informe o nome do serviço.');
+      if (!target && (service.price === null || service.duration === null)) return fail(422, 'Informe o valor do serviço.');
       await store.saveService(service); bust();
       return ok({ service }, target ? 200 : 201);
+    }
+
+    if ((m = url.pathname.match(/^\/api\/products(?:\/([^/]+))?$/)) && ['POST', 'PUT'].includes(method)) {
+      const core = await getCore(store, true);
+      const list = core.products || [];
+      const target = m[1] ? list.find(p => p.id === m[1]) : null;
+      if (method === 'PUT' && !target) return fail(404, 'Produto não encontrado.');
+      const product = target || { id: uuid(), order: Math.max(-1, ...list.map((p, i) => p.order ?? i)) + 1 };
+      const num = v => (v === null || v === undefined || v === '' || isNaN(Number(v)) || Number(v) < 0) ? null : money(v);
+      product.name = String(body.name ?? product.name ?? '').trim().slice(0, 80);
+      product.description = String(body.description ?? product.description ?? '').trim().slice(0, 200);
+      product.cost = num(body.cost);
+      product.price = num(body.price);
+      if (!product.name) return fail(422, 'Informe o nome do produto.');
+      if (product.price === null) return fail(422, 'Informe o valor de venda.');
+      if (product.cost === null) return fail(422, 'Informe o valor de custo.');
+      product.active = body.active === undefined ? true : Boolean(body.active);
+      await store.saveProduct(product); bust();
+      return ok({ product }, target ? 200 : 201);
+    }
+
+    /* ---------- Plano mensal (fica dentro do cadastro do cliente) ---------- */
+    if ((m = url.pathname.match(/^\/api\/clients\/(\d+)\/plan$/)) && method === 'PUT') {
+      const key = m[1]; const now = new Date().toISOString();
+      const name = String(body.name || '').trim().slice(0, 80);
+      const phone = String(body.phone || '').replace(/\D/g, '').slice(0, 15);
+      const val = v => (v === null || v === undefined || v === '' || isNaN(Number(v)) || Number(v) < 0) ? null : money(v);
+      const int = v => (v === null || v === undefined || v === '' || isNaN(Number(v)) || Number(v) < 0) ? null : Math.floor(Number(v));
+      if (name.length < 2) return fail(422, 'Informe o nome do usuário.');
+      if (key.length < 10 || phoneKey(phone) !== key) return fail(422, 'Informe um telefone válido com DDD.');
+      const monthlyValue = val(body.monthlyValue), planValue = val(body.planValue === '' ? body.monthlyValue : body.planValue);
+      const cutsPerMonth = int(body.cutsPerMonth), dependentsAllowed = int(body.dependentsAllowed ?? 0);
+      if (monthlyValue === null) return fail(422, 'Informe o valor do plano mensal.');
+      if (planValue === null) return fail(422, 'Informe o valor do plano.');
+      if (cutsPerMonth === null) return fail(422, 'Informe a quantidade de cortes no mês.');
+      if (dependentsAllowed === null) return fail(422, 'Informe a quantidade de dependentes.');
+      const dependents = (Array.isArray(body.dependents) ? body.dependents : []).map(d => ({ id: String(d.id || uuid()).slice(0, 60), name: String(d.name || '').trim().slice(0, 80), phone: String(d.phone || '').replace(/\D/g, '').slice(0, 15) })).filter(d => d.name).slice(0, 30);
+      if (dependents.some(d => d.phone && d.phone.length < 10)) return fail(422, 'Informe um WhatsApp válido com DDD para o dependente.');
+      if (dependents.length > dependentsAllowed) return fail(422, 'Há mais dependentes cadastrados do que a quantidade permitida no plano.');
+      const old = await store.getClient(key); const prev = old && old.plan;
+      const client = { ...(old || {}), id: key, name, phone, firstBookingAt: (old && old.firstBookingAt) || now, lastBookingAt: (old && old.lastBookingAt) || null,
+        plan: { active: body.active === undefined ? !(prev && prev.active === false) : Boolean(body.active), monthlyValue, planValue, cutsPerMonth, dependentsAllowed, dependents,
+          cuts: (prev && prev.cuts) || [], startedAt: (prev && prev.startedAt) || now.slice(0, 10), updatedAt: now } };
+      await store.saveClient(client);
+      return ok({ client }, prev ? 200 : 201);
+    }
+
+    if ((m = url.pathname.match(/^\/api\/clients\/(\d+)\/plan\/cuts(?:\/([^/]+))?$/)) && ['POST', 'DELETE'].includes(method)) {
+      const old = await store.getClient(m[1]);
+      if (!old || !old.plan) return fail(404, 'Plano não encontrado.');
+      const plan = old.plan; plan.cuts = plan.cuts || [];
+      if (method === 'DELETE') {
+        if (!plan.cuts.some(c => c.id === m[2])) return fail(404, 'Corte não encontrado.');
+        plan.cuts = plan.cuts.filter(c => c.id !== m[2]); await store.saveClient(old);
+        return ok({ client: old });
+      }
+      if (plan.active === false) return fail(422, 'Este plano está inativo.');
+      const date = String(body.date || '');
+      if (!validDate(date)) return fail(422, 'Informe a data do corte.');
+      let dependent = null;
+      if (body.dependentId) { dependent = (plan.dependents || []).find(d => d.id === body.dependentId); if (!dependent) return fail(422, 'Dependente não encontrado.'); }
+      const cut = { id: uuid(), date, dependentId: dependent ? dependent.id : null, dependentName: dependent ? dependent.name : null, createdAt: new Date().toISOString() };
+      plan.cuts.push(cut); await store.saveClient(old);
+      const overLimit = plan.cuts.filter(c => c.date.slice(0, 7) === date.slice(0, 7)).length > plan.cutsPerMonth;
+      return ok({ client: old, cut, overLimit }, 201);
     }
 
     if ((m = url.pathname.match(/^\/api\/hours\/(\d)$/)) && method === 'PUT') {
