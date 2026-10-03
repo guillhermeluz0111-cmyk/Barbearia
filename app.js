@@ -579,11 +579,56 @@ function setAdminTab(tab) {
   $$('.admin-panel').forEach(panel => panel.classList.toggle('hidden', panel.id !== `admin-${tab}`));
   $('#admin-title').textContent = titles[tab];
 }
+/* ---------- Painel ao vivo: detecta novos agendamentos sozinho ---------- */
+const LIVE_INTERVAL = 5000;
+const live = { version: null, busy: false };
+
+function rerenderAppointmentViews() {
+  const openCards = $$('.appointment-card.open').map(card => card.dataset.appointment);
+  const active = document.activeElement; const focusId = active && active.id;
+  const caret = active && typeof active.selectionStart === 'number' ? [active.selectionStart, active.selectionEnd] : null;
+  const scroller = window.scrollY;
+  renderDashboard(); renderAgenda(); renderClients(); renderSystem();
+  openCards.forEach(id => $$(`.appointment-card[data-appointment="${id}"]`).forEach(card => card.classList.add('open')));
+  if (focusId && document.getElementById(focusId) && document.activeElement.id !== focusId) {
+    const element = document.getElementById(focusId); element.focus();
+    if (caret && typeof element.setSelectionRange === 'function') element.setSelectionRange(caret[0], caret[1]);
+  }
+  window.scrollTo({ top: scroller });
+}
+
+async function refreshLive() {
+  const known = new Set(state.data.appointments.map(item => item.id));
+  await reloadState();
+  const fresh = state.data.appointments.filter(item => !known.has(item.id));
+  rerenderAppointmentViews();
+  if (fresh.length === 1) toast(`Novo agendamento: ${fresh[0].customerName} · ${dateFmt(fresh[0].date)} às ${fresh[0].time}`);
+  else if (fresh.length > 1) toast(`${fresh.length} novos agendamentos`);
+}
+
+async function syncLive() {
+  if (live.busy || document.hidden) return; live.busy = true;
+  try {
+    const { version } = await api('/api/sync');
+    if (live.version !== null && version !== live.version) { live.version = version; await refreshLive(); }
+    live.version = version;
+  } catch (error) { /* sem conexão agora: tenta de novo no próximo ciclo */ }
+  finally { live.busy = false; }
+}
+
+function startLive() {
+  setInterval(syncLive, LIVE_INTERVAL);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) syncLive(); });
+  window.addEventListener('focus', syncLive);
+}
+
 async function reloadState() { state.data = await api('/api/state' + (document.body.classList.contains('admin-page') ? '?appointments=1' : '')); }
 async function init() {
   try {
-    await reloadState();
     const adminMode = document.body.classList.contains('admin-page');
+    // marcador lido ANTES de carregar os dados: qualquer agendamento feito nesse intervalo é detectado
+    if (adminMode) { try { live.version = (await api('/api/sync')).version; } catch (error) { live.version = null; } }
+    await reloadState();
     if (adminMode) {
       if (Store.mode === 'local') setTimeout(() => toast('Modo local: dados salvos só neste navegador (Firestore indisponível).'), 600);
       renderAdmin();
@@ -594,6 +639,7 @@ async function init() {
       $('#reset-confirm').addEventListener('input', event => { $('#reset-run').disabled = event.target.value.trim().toUpperCase() !== 'ZERAR'; });
       $('#reset-run').addEventListener('click', runReset);
       window.addEventListener('hashchange', syncClientHash); syncClientHash();
+      startLive();
     } else {
       renderServices(); updateSummary(); wirePublic(); renderPublicInfo();
     }

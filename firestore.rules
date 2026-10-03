@@ -10,6 +10,7 @@ service cloud.firestore {
     match /config/{doc}       { allow read, create, update: if true; allow delete: if false; }
     match /services/{doc}     { allow read, create, update: if true; allow delete: if false; }
     match /hours/{doc}        { allow read, create, update: if true; allow delete: if false; }
+    match /meta/{doc}         { allow read, create, update: if true; allow delete: if false; }
     // agendamentos e clientes podem ser apagados (botão "Zerar dados" do painel)
     match /appointments/{doc} { allow read, create, update, delete: if true; }
     match /clients/{doc}      { allow read, create, update, delete: if true; }

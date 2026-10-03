@@ -6,6 +6,7 @@
      hours/{0..6}           -> um documento por dia da semana (0 = domingo)
      appointments/{id}      -> um documento por agendamento
      clients/{telefone}     -> um documento por cliente
+     meta/sync              -> marcador de última mudança (o painel lê só este documento para saber se há novidade)
 
    O sistema nasce zerado: sem agendamentos e sem clientes. Só são criados os serviços e horários
    padrão (editáveis no painel). Se o Firestore estiver indisponível, cai para localStorage. */
@@ -118,6 +119,8 @@
     }
   };
 
+  const touch = () => ({ col: 'meta', id: 'sync', data: { updatedAt: Date.now() } });
+
   /* ---------- Adaptador Firestore (coleções separadas) ---------- */
   const fsStore = {
     async core() {
@@ -129,19 +132,23 @@
     getAppointment: id => fs.get('appointments', id),
     async createAppointment(appt) {
       const key = appt.clientId; const now = new Date().toISOString();
-      const writes = [{ col: 'appointments', id: appt.id, data: appt, mustNotExist: true }];
+      const writes = [{ col: 'appointments', id: appt.id, data: appt, mustNotExist: true }, touch()];
       if (key) {
         const old = await fs.get('clients', key);
         writes.push({ col: 'clients', id: key, data: { id: key, name: appt.customerName, phone: appt.phone, firstBookingAt: (old && old.firstBookingAt) || now, lastBookingAt: now } });
       }
       await fs.commit(writes);
     },
-    updateAppointment: (appt, keys) => fs.update('appointments', appt.id, Object.fromEntries(keys.map(k => [k, appt[k]]))),
+    async updateAppointment(appt, keys) {
+      await fs.update('appointments', appt.id, Object.fromEntries(keys.map(k => [k, appt[k]])));
+      await fs.set('meta', 'sync', { updatedAt: Date.now() });
+    },
+    async version() { const d = await fs.get('meta', 'sync'); return d ? String(d.updatedAt) : '0'; },
     saveService: s => fs.set('services', s.id, s),
     saveHour: h => fs.set('hours', String(h.day), h),
     async resetData() {
       const [appts, clients] = await Promise.all([fs.ids('appointments'), fs.ids('clients')]);
-      await fs.commit([...appts.map(id => ({ col: 'appointments', id, remove: true })), ...clients.map(id => ({ col: 'clients', id, remove: true }))]);
+      await fs.commit([...appts.map(id => ({ col: 'appointments', id, remove: true })), ...clients.map(id => ({ col: 'clients', id, remove: true })), touch()]);
       return { appointments: appts.length, clients: clients.length };
     }
   };
@@ -155,11 +162,12 @@
     async listAppointments() { return this.db().appointments; },
     async appointmentsByDate(date) { return this.db().appointments.filter(a => a.date === date); },
     async getAppointment(id) { return this.db().appointments.find(a => a.id === id) || null; },
-    async createAppointment(appt) { const d = this.db(); d.appointments.push(appt); writeLocal(d); },
-    async updateAppointment(appt) { const d = this.db(); const i = d.appointments.findIndex(a => a.id === appt.id); if (i >= 0) d.appointments[i] = appt; writeLocal(d); },
+    async createAppointment(appt) { const d = this.db(); d.appointments.push(appt); d.syncAt = Date.now(); writeLocal(d); },
+    async updateAppointment(appt) { const d = this.db(); const i = d.appointments.findIndex(a => a.id === appt.id); if (i >= 0) d.appointments[i] = appt; d.syncAt = Date.now(); writeLocal(d); },
     async saveService(s) { const d = this.db(); const i = d.services.findIndex(x => x.id === s.id); if (i >= 0) d.services[i] = s; else d.services.push(s); writeLocal(d); },
     async saveHour(h) { const d = this.db(); const i = d.hours.findIndex(x => x.day === h.day); if (i >= 0) d.hours[i] = h; writeLocal(d); },
-    async resetData() { const d = this.db(); const n = d.appointments.length; d.appointments = []; writeLocal(d); return { appointments: n, clients: 0 }; }
+    async resetData() { const d = this.db(); const n = d.appointments.length; d.appointments = []; d.syncAt = Date.now(); writeLocal(d); return { appointments: n, clients: 0 }; },
+    async version() { return String(this.db().syncAt || 0); }
   };
 
   /* ---------- Primeiro acesso: cria as coleções vazias (serviços e horários padrão) ---------- */
@@ -267,6 +275,8 @@
       const appointments = url.searchParams.get('appointments') === '1' ? (await store.listAppointments()).sort((a, b) => stamp(a).localeCompare(stamp(b))) : [];
       return ok({ ...core, appointments });
     }
+
+    if (method === 'GET' && url.pathname === '/api/sync') return ok({ version: await store.version() });
 
     if (method === 'GET' && url.pathname === '/api/availability') {
       const date = url.searchParams.get('date') || '';
