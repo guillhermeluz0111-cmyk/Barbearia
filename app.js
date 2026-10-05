@@ -155,16 +155,54 @@ function renderReview() {
   const services = selectedServices(); const products = selectedProducts(); const sum = totals();
   $('#bk-review').innerHTML = `
     <div class="rv-block"><div class="rv-title"><small>Serviços</small><button type="button" class="rv-edit" data-go="1">Alterar</button></div>
-      ${services.map(item => `<div class="rv-line"><span>${esc(item.name)}</span><b>${BRL.format(item.price)}</b></div>`).join('')}</div>
+      ${services.map(reviewServiceLine).join('')}</div>
     <div class="rv-block"><div class="rv-title"><small>Data e horário</small><button type="button" class="rv-edit" data-go="2">Alterar</button></div>
       <div class="rv-grid"><div><span>Data</span><b>${esc(shortDate(state.date))}</b></div><div><span>Horário</span><b>${esc(state.time)}</b></div><div><span>Duração</span><b>${minutesLabel(sum.duration)}</b></div></div></div>
     ${products.length ? `<div class="rv-block"><div class="rv-title"><small>Complementos</small><button type="button" class="rv-edit" data-go="3">Alterar</button></div>
       ${products.map(item => `<div class="rv-line"><span>${esc(item.name)}</span><b>${BRL.format(item.price)}</b></div>`).join('')}</div>` : ''}
     <div class="rv-block"><div class="rv-title"><small>Seus dados</small><button type="button" class="rv-edit" data-go="4">Alterar</button></div>
       <div class="rv-grid"><div><span>Nome</span><b>${esc($('#customer-name').value.trim())}</b></div><div><span>WhatsApp</span><b>${esc($('#customer-phone').value)}</b></div><div><span>Cadastro</span><b>${state.clientMode === 'new' ? 'Novo cliente' : 'Cliente cadastrado'}</b></div></div></div>
-    <div class="rv-total"><span>Total</span><strong>${BRL.format(sum.total)}</strong></div>
+    ${reviewPlanBlock()}
+    <div class="rv-total"><span>Total</span><strong>${BRL.format(shownTotal(sum))}</strong></div>
     <p class="bk-note">✓ Você confere a mensagem antes de enviar pelo WhatsApp.</p>`;
   $$('.rv-edit', $('#bk-review')).forEach(button => button.addEventListener('click', () => goStep(Number(button.dataset.go))));
+  const who = $('#rv-beneficiary'); if (who) who.addEventListener('change', () => { state.beneficiary = who.value; renderReview(); });
+  loadQuote();
+}
+
+/* ---------- Assinante: confere o cadastro e os cortes do plano antes de confirmar ---------- */
+const quoteKey = () => [phoneDigits(), state.date, state.selected.join(','), state.products.join(','), state.beneficiary || ''].join('|');
+const quoteOk = () => Boolean(state.quote && state.quote.subscriber && state.quoteKey === quoteKey());
+const shownTotal = sum => (state.step >= 5 && quoteOk()) ? state.quote.total : sum.total;
+async function loadQuote() {
+  if (state.quotePhone !== phoneDigits()) { state.quotePhone = phoneDigits(); state.beneficiary = ''; }
+  const key = quoteKey(); if (state.quoteKey === key) return;
+  state.quoteKey = key; state.quote = null; state.quoteLoading = true; updateSummary();
+  try {
+    const q = await api('/api/plan-quote?' + new URLSearchParams({ phone: phoneDigits(), date: state.date, services: state.selected.join(','), products: state.products.join(','), beneficiary: state.beneficiary || '' }));
+    if (state.quoteKey !== key) return; state.quote = q;
+  } catch (error) { if (state.quoteKey !== key) return; state.quote = null; }
+  state.quoteLoading = false; if (state.step === 5) { renderReview(); updateSummary(); }
+}
+function reviewServiceLine(item) {
+  const line = quoteOk() ? state.quote.lines.find(l => l.id === item.id) : null;
+  if (!line || !line.eligible) return `<div class="rv-line"><span>${esc(item.name)}</span><b>${BRL.format(item.price)}</b></div>`;
+  return `<div class="rv-line"><span>${esc(item.name)}</span><b>${line.covered ? `<s>${BRL.format(item.price)}</s> Incluso no plano` : `${line.charge === item.price ? '' : `<s>${BRL.format(item.price)}</s> `}${BRL.format(line.charge)} <small>(adicional)</small>`}</b></div>`;
+}
+function reviewPlanBlock() {
+  if (state.quoteLoading) return '<div class="rv-block rv-plan"><p class="rv-plan-msg">Conferindo seu cadastro…</p></div>';
+  if (!quoteOk()) return '';
+  const q = state.quote; const month = state.date ? new Date(state.date + 'T12:00:00').toLocaleDateString('pt-BR', { month: 'long' }) : 'mês';
+  const n = (count, one, many) => `${count} ${count === 1 ? one : many}`;
+  let message, tone = 'ok';
+  if (!q.eligible) message = 'Nenhum serviço deste agendamento usa corte do plano. Os valores são os normais.';
+  else if (!q.extra) message = `✓ ${n(q.covered, 'corte incluso', 'cortes inclusos')} no plano, valor zerado. Depois deste agendamento, ${q.remainingAfter === 1 ? 'resta 1 corte' : `restam ${q.remainingAfter} cortes`} em ${month}.`;
+  else if (!q.covered) { tone = 'warn'; message = `${q.limit === 1 ? 'Seu corte' : `Seus ${q.limit} cortes`} de ${month} ${q.limit === 1 ? 'já foi usado' : 'já foram usados'}. Será cobrado corte adicional: ${BRL.format(q.extraCharge)}.`; }
+  else { tone = 'warn'; message = `${n(q.covered, 'corte incluso', 'cortes inclusos')} no plano e ${n(q.extra, 'adicional', 'adicionais')}: ${BRL.format(q.extraCharge)} a pagar.`; }
+  return `<div class="rv-block rv-plan"><div class="rv-title"><small>Plano mensal · ${esc(q.planName)}</small></div>
+    ${q.dependents.length ? `<label class="rv-who">Quem vai cortar?<select id="rv-beneficiary"><option value="">Titular</option>${q.dependents.map(d => `<option value="${esc(d.id)}" ${state.beneficiary === d.id ? 'selected' : ''}>${esc(d.name)} (dependente)</option>`).join('')}</select></label>` : ''}
+    <div class="rv-grid"><div><span>Usados no mês</span><b>${Math.min(q.usedBefore, q.limit)} de ${q.limit}</b></div><div><span>Disponíveis</span><b>${q.available}</b></div><div><span>Após este</span><b>${q.remainingAfter}</b></div></div>
+    <p class="rv-plan-msg ${tone}">${message}</p></div>`;
 }
 
 function updateScrollHint() {
@@ -181,8 +219,8 @@ function updateSummary() {
   $('#summary-date').textContent = state.date ? dateFmt(state.date) : '—';
   $('#summary-time').textContent = state.time || '—';
   $('#summary-duration').textContent = sum.duration ? minutesLabel(sum.duration) : '—';
-  $('#summary-total').textContent = BRL.format(sum.total);
-  $('#bk-mini-total').textContent = BRL.format(sum.total);
+  $('#summary-total').textContent = BRL.format(shownTotal(sum));
+  $('#bk-mini-total').textContent = BRL.format(shownTotal(sum));
   $('#bk-mini-info').textContent = services.length ? `${services.length} ${services.length === 1 ? 'serviço' : 'serviços'}${prods.length ? ` · ${prods.length} ${prods.length === 1 ? 'produto' : 'produtos'}` : ''} · ${minutesLabel(sum.duration)}` : 'Nenhum serviço';
 
   $('#bk').dataset.step = state.step;
@@ -195,7 +233,7 @@ function updateSummary() {
   });
   const next = $('#bk-next');
   next.innerHTML = state.step === 5 ? 'Confirmar e abrir WhatsApp <span>→</span>' : state.step === 4 ? 'Revisar <span>→</span>' : 'Continuar <span>→</span>';
-  next.disabled = !stepValid(state.step) || state.saving;
+  next.disabled = !stepValid(state.step) || state.saving || (state.step === 5 && state.quoteLoading);
   if (state.step === 4) renderClientStep();
   $('#bk-back').style.visibility = state.step === 1 ? 'hidden' : 'visible';
   if (state.step === 5) renderReview();
@@ -203,7 +241,7 @@ function updateSummary() {
 }
 
 function bookingMessage(appointment) {
-  return `Olá! Acabei de realizar um agendamento.\n\nNome: ${appointment.customerName}\nData: ${dateFmt(appointment.date)}\nHorário: ${appointment.time}\nServiços: ${appointment.services.map(item => item.name).join(' + ')}${prodLine(appointment)}\nValor total: ${BRL.format(appointment.total)}\n\nAguardo a confirmação. Obrigado!`;
+  return `Olá! Acabei de realizar um agendamento.\n\nNome: ${appointment.customerName}\nData: ${dateFmt(appointment.date)}\nHorário: ${appointment.time}\nServiços: ${appointment.services.map(item => item.name).join(' + ')}${prodLine(appointment)}\nValor total: ${BRL.format(appointment.total)}${appointment.planInfo ? `\n\n${appointment.planInfo.text}` : ''}\n\nAguardo a confirmação. Obrigado!`;
 }
 function reminderMessage(item) {
   return `Olá, ${item.customerName.split(' ')[0]}! Passando para lembrar que você tem um agendamento na Willzinho Barber em ${dateFmt(item.date)} às ${item.time}.\n\nServiços: ${item.services.map(service => service.name).join(' + ')}${prodLine(item)}\nValor: ${BRL.format(item.total)}\n\nTe esperamos!`;
@@ -220,7 +258,7 @@ async function confirmBooking() {
   try {
     const result = await api('/api/appointments', { method: 'POST', body: JSON.stringify({
       customerName: $('#customer-name').value, phone: $('#customer-phone').value,
-      date: state.date, time: state.time, serviceIds: state.selected, productIds: state.products
+      date: state.date, time: state.time, serviceIds: state.selected, productIds: state.products, beneficiaryId: state.beneficiary || ''
     }) });
     state.saving = false; resetBooking();
     showMessage(result.whatsapp, bookingMessage(result.appointment));
@@ -233,6 +271,7 @@ async function confirmBooking() {
 }
 
 function resetBooking() {
+  state.quote = null; state.quoteKey = ''; state.quoteLoading = false; state.beneficiary = ''; state.quotePhone = '';
   state.selected = []; state.products = []; state.clientMode = ''; state.foundName = ''; state.date = ''; state.time = ''; state.step = 1; state.weekStart = 0;
   $('#customer-name').value = ''; $('#customer-phone').value = ''; $('#booking-date').value = ''; state.autoName = ''; $('#phone-hint').hidden = true;
   renderServices(); renderProducts(); $('#time-slots').innerHTML = ''; $('#day-strip').innerHTML = ''; updateSummary(); $('#bk-body').scrollTop = 0;
@@ -265,6 +304,7 @@ function scheduleLookup(delay = 350) {
         setHint(state.clientMode === 'new'
           ? `Este WhatsApp já tem cadastro, <b>${first}</b>! Entramos como cliente cadastrado.`
           : `Olá, <b>${first}</b>! Encontramos seu cadastro.`);
+        if (client.subscriber) setHint($('#phone-hint').innerHTML + ` Você é <b>assinante</b> do ${esc(client.planName)}: seus cortes do plano serão conferidos na revisão.`);
         state.clientMode = 'existing';
       } else {
         clearAuto();
@@ -313,15 +353,19 @@ function wirePublic() {
 }
 
 function appointmentsFor(date) { return state.data.appointments.filter(item => item.date === date).sort((a, b) => a.time.localeCompare(b.time)); }
+const planSummary = item => { const p = item.planInfo; if (!p) return ''; if (!p.eligible) return `${p.planName}: sem corte do plano`; if (p.extra) return `${p.planName}: ${p.extra} ${p.extra === 1 ? 'corte adicional' : 'cortes adicionais'} · ${BRL.format(p.extraCharge)} a cobrar`; return `${p.planName}: corte incluso · restam ${p.remainingAfter}`; };
+function planNotice(appt) {
+  return `Olá, ${appt.customerName.split(' ')[0]}! Resumo do seu agendamento em ${dateFmt(appt.date)} às ${appt.time}.\n\nServiços: ${appt.services.map(service => service.name).join(' + ')}${prodLine(appt)}\nValor a pagar: ${BRL.format(appt.total)}${appt.planInfo ? `\n\n${appt.planInfo.text}` : ''}\n\nQualquer dúvida, é só chamar!`;
+}
 function appointmentCard(item) {
   const actions = item.status === 'pending_confirmation'
     ? '<button class="mini-btn confirm" data-action="confirm">Confirmar</button><button class="mini-btn" data-action="reschedule">Reagendar</button><button class="mini-btn danger" data-action="no_show">Desistência</button>'
     : '<button class="mini-btn" data-action="remind">Lembrar</button><button class="mini-btn" data-action="attended">Compareceu</button><button class="mini-btn" data-action="reschedule">Reagendar</button><button class="mini-btn danger" data-action="no_show">Desistência</button>';
   return `<article class="appointment-card" data-appointment="${item.id}">
     <div class="appointment-head"><strong>${item.time} — ${esc(item.customerName)}</strong><span class="status-pill ${item.status}">${statusLabels[item.status] || item.status}</span></div>
-    <p>${esc(item.services.map(service => service.name).join(' + '))}${item.products && item.products.length ? ` <em class="prod-tag">+ ${esc(item.products.map(p => p.name).join(', '))}</em>` : ''} · ${BRL.format(item.total)}</p>
+    <p>${esc(item.services.map(service => service.name).join(' + '))}${item.products && item.products.length ? ` <em class="prod-tag">+ ${esc(item.products.map(p => p.name).join(', '))}</em>` : ''}${item.planInfo ? ' <em class="plan-tag">Assinante</em>' : ''} · ${BRL.format(item.total)}</p>
     <div class="appointment-details">
-      <dl><div><dt>Telefone</dt><dd>${esc(item.phone)}</dd></div><div><dt>Duração</dt><dd>${minutesLabel(item.duration)}</dd></div><div><dt>Data</dt><dd>${dateFmt(item.date)}</dd></div><div><dt>Criado em</dt><dd>${new Date(item.createdAt).toLocaleDateString('pt-BR')}</dd></div></dl>
+      <dl><div><dt>Telefone</dt><dd>${esc(item.phone)}</dd></div><div><dt>Duração</dt><dd>${minutesLabel(item.duration)}</dd></div><div><dt>Data</dt><dd>${dateFmt(item.date)}</dd></div><div><dt>Criado em</dt><dd>${new Date(item.createdAt).toLocaleDateString('pt-BR')}</dd></div>${item.planInfo ? `<div><dt>Plano</dt><dd>${esc(planSummary(item))}</dd></div>` : ''}</dl>
       <div class="action-row">${actions}</div>
     </div>
   </article>`;
@@ -369,11 +413,11 @@ function renderServiceAdmin() {
   const products = state.data.products || [];
   const margin = item => (item.price !== null && item.cost !== null && item.cost !== undefined) ? BRL.format(item.price - item.cost) : '—';
   root.innerHTML = `${planConfigCard()}<div class="panel-card"><div class="panel-header"><div><h3>CATÁLOGO DE SERVIÇOS</h3><p>As alterações refletem no site público</p></div><button class="primary-btn small" id="add-item">Adicionar <span>+</span></button></div>
-    ${state.data.services.length ? `<table class="data-table"><thead><tr><th>Serviço</th><th>Preço (R$)</th><th>Custo (R$)</th><th>Lucro</th><th>Duração (min)</th><th>Visível</th><th></th></tr></thead><tbody>${state.data.services.map(item => `<tr data-service-row="${esc(item.id)}"><td><input data-field="name" value="${esc(item.name)}"></td><td><input data-field="price" type="number" min="0" step="0.01" value="${item.price ?? ''}" placeholder="A definir"></td><td><input data-field="cost" type="number" min="0" step="0.01" value="${item.cost ?? ''}" placeholder="Opcional"></td><td><b>${margin(item)}</b></td><td><input data-field="duration" type="number" min="5" step="5" value="${item.duration ?? ''}" placeholder="A definir"></td><td><button class="toggle ${item.active ? 'on' : ''}" data-field="active" aria-label="Ativar ou desativar"></button></td><td class="row-actions"><button class="mini-btn" data-save-service>Salvar</button><button class="mini-btn danger" data-delete-service>Apagar</button></td></tr>`).join('')}</tbody></table>` : '<div class="empty-admin">Nenhum serviço cadastrado. Use “Adicionar” para criar o primeiro.</div>'}</div>
+    ${state.data.services.length ? `<table class="data-table"><thead><tr><th>Serviço</th><th>Preço (R$)</th><th>Custo (R$)</th><th>Lucro</th><th>Duração (min)</th><th>No plano</th><th>Visível</th><th></th></tr></thead><tbody>${state.data.services.map(item => `<tr data-service-row="${esc(item.id)}"><td><input data-field="name" value="${esc(item.name)}"></td><td><input data-field="price" type="number" min="0" step="0.01" value="${item.price ?? ''}" placeholder="A definir"></td><td><input data-field="cost" type="number" min="0" step="0.01" value="${item.cost ?? ''}" placeholder="Opcional"></td><td><b>${margin(item)}</b></td><td><input data-field="duration" type="number" min="5" step="5" value="${item.duration ?? ''}" placeholder="A definir"></td><td><button class="toggle ${inPlanOf(item) ? 'on' : ''}" data-field="inplan" aria-label="Coberto pelo plano mensal" title="Usa um corte do plano do assinante"></button></td><td><button class="toggle ${item.active ? 'on' : ''}" data-field="active" aria-label="Ativar ou desativar"></button></td><td class="row-actions"><button class="mini-btn" data-save-service>Salvar</button><button class="mini-btn danger" data-delete-service>Apagar</button></td></tr>`).join('')}</tbody></table>` : '<div class="empty-admin">Nenhum serviço cadastrado. Use “Adicionar” para criar o primeiro.</div>'}</div>
     <div class="panel-card"><div class="panel-header"><div><h3>CATÁLOGO DE PRODUTOS</h3><p>Aparecem como complementos na etapa 3 do agendamento · o custo só aparece aqui no painel</p></div></div>
     ${products.length ? `<table class="data-table"><thead><tr><th>Produto</th><th>Custo (R$)</th><th>Venda (R$)</th><th>Lucro</th><th>Qtd.</th><th>Descrição</th><th>Visível</th><th></th></tr></thead><tbody>${products.map(item => `<tr data-product-row="${esc(item.id)}"><td><input data-field="name" value="${esc(item.name)}"></td><td><input data-field="cost" type="number" min="0" step="0.01" value="${item.cost ?? ''}"></td><td><input data-field="price" type="number" min="0" step="0.01" value="${item.price ?? ''}"></td><td><b>${margin(item)}</b></td><td><input data-field="quantity" type="number" min="0" step="1" value="${item.quantity ?? ''}" placeholder="0"></td><td><input data-field="description" value="${esc(item.description || '')}"></td><td><button class="toggle ${item.active ? 'on' : ''}" data-field="active" aria-label="Ativar ou desativar"></button></td><td class="row-actions"><button class="mini-btn" data-save-product>Salvar</button><button class="mini-btn danger" data-delete-product>Apagar</button></td></tr>`).join('')}</tbody></table>` : '<div class="empty-admin">Nenhum produto cadastrado. Use “Adicionar” para criar o primeiro.</div>'}
     </div>`;
-  $$('[data-field="active"]', root).forEach(button => button.addEventListener('click', () => button.classList.toggle('on')));
+  $$('[data-field="active"], [data-field="inplan"]', root).forEach(button => button.addEventListener('click', () => button.classList.toggle('on')));
   $$('[data-save-service]', root).forEach(button => button.addEventListener('click', () => saveService(button.closest('tr'))));
   $$('[data-save-product]', root).forEach(button => button.addEventListener('click', () => saveProduct(button.closest('tr'))));
   $$('[data-delete-service]', root).forEach(button => button.addEventListener('click', () => deleteItem('services', button.closest('tr'))));
@@ -383,6 +427,7 @@ function renderServiceAdmin() {
 }
 
 /* ---------- Plano mensal: configuração (aba Serviços) ---------- */
+const inPlanOf = item => (item.inPlan === undefined || item.inPlan === null) ? /corte|cabelo/i.test(item.name || '') : Boolean(item.inPlan);
 const planOf = () => (state.data.config && state.data.config.monthlyPlan) || { enabled: false, name: 'Plano Mensal', description: '', monthlyValue: 0, includedCuts: 4, extraCutValue: 0, dependentValue: 0, maxDependents: 3 };
 const planTotal = (plan, deps, cuts) => plan.monthlyValue + deps * plan.dependentValue + Math.max(0, cuts - plan.includedCuts) * plan.extraCutValue;
 function planConfigCard() {
@@ -569,7 +614,7 @@ async function appointmentAction(id, action) {
       const result = await api(`/api/appointments/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'scheduled' }) });
       await reloadState(); renderAdmin();
       const confirmed = result.appointment;
-      showMessage(confirmed.phone, `Olá, ${confirmed.customerName.split(' ')[0]}! Seu agendamento está confirmado.\n\nData: ${dateFmt(confirmed.date)}\nHorário: ${confirmed.time}\nServiços: ${confirmed.services.map(service => service.name).join(' + ')}${prodLine(confirmed)}\nValor: ${BRL.format(confirmed.total)}\nDuração estimada: ${minutesLabel(confirmed.duration)}\n\nTe esperamos!`);
+      showMessage(confirmed.phone, `Olá, ${confirmed.customerName.split(' ')[0]}! Seu agendamento está confirmado.\n\nData: ${dateFmt(confirmed.date)}\nHorário: ${confirmed.time}\nServiços: ${confirmed.services.map(service => service.name).join(' + ')}${prodLine(confirmed)}\nValor: ${BRL.format(confirmed.total)}\nDuração estimada: ${minutesLabel(confirmed.duration)}${confirmed.planInfo ? `\n\n${confirmed.planInfo.text}` : ''}\n\nTe esperamos!`);
       toast('Agendamento confirmado.');
     } catch (error) { toast(error.message); }
     return;
@@ -621,6 +666,7 @@ async function saveService(row) {
     price: $('[data-field="price"]', row).value,
     cost: $('[data-field="cost"]', row).value,
     duration: $('[data-field="duration"]', row).value,
+    inPlan: $('[data-field="inplan"]', row).classList.contains('on'),
     active: $('[data-field="active"]', row).classList.contains('on')
   };
   try { await api(`/api/services/${row.dataset.serviceRow}`, { method: 'PUT', body: JSON.stringify(payload) }); await reloadState(); renderServiceAdmin(); toast('Serviço atualizado.'); }
@@ -810,7 +856,7 @@ function renderPlans() {
         ${wait ? `<div class="plan-block"><small>Pedido feito pelo site${plan.requestedAt ? ` em ${regDate(plan.requestedAt)}` : ''}</small><p class="muted">Cortes acima do mínimo: ${Math.max(0, (plan.cutsPerMonth || 0) - (plan.includedCuts || plan.cutsPerMonth || 0))} · Combine o pagamento com o cliente no WhatsApp e confirme aqui para ativar o plano.</p></div>` : ''}
         <div class="plan-block"><small>Dependentes cadastrados</small>${depList.length ? `<div class="chips">${depList.map(dep => `<span class="chip dep-chip"><b>${esc(dep.name)}</b>${dep.phone ? `<a href="https://wa.me/${esc(waNumber(dep.phone))}" target="_blank" rel="noopener">${esc(phoneFmt(dep.phone))} ↗</a>` : '<em>sem WhatsApp</em>'}</span>`).join('')}</div>` : '<p class="muted">Nenhum dependente cadastrado.</p>'}</div>
         <div class="plan-block"><small>Cortes registrados ${history.length ? `· últimos ${history.length}` : ''}</small>
-          ${history.length ? history.map(cut => `<div class="cut-line"><span>${dateFmt(cut.date)}</span><b>${cut.dependentName ? `Dependente: ${esc(cut.dependentName)}` : 'Titular'}</b><button class="mini-btn danger" data-plan-action="remove-cut" data-cut="${esc(cut.id)}">Remover</button></div>`).join('') : '<p class="muted">Nenhum corte registrado ainda.</p>'}</div>
+          ${history.length ? history.map(cut => `<div class="cut-line"><span>${dateFmt(cut.date)}${cut.time ? ` · ${esc(cut.time)}` : ''}</span><b>${cut.dependentName ? `Dependente: ${esc(cut.dependentName)}` : 'Titular'}</b>${cut.kind === 'extra' ? `<em class="cut-tag extra">Adicional ${BRL.format(cut.charge || 0)}</em>` : cut.appointmentId ? '<em class="cut-tag">Agendamento · incluso</em>' : ''}${cut.appointmentId ? `<button class="mini-btn" data-plan-action="cut-msg" data-cut="${esc(cut.id)}">Mensagem</button>` : ''}<button class="mini-btn danger" data-plan-action="remove-cut" data-cut="${esc(cut.id)}">Remover</button></div>`).join('') : '<p class="muted">Nenhum corte registrado ainda.</p>'}</div>
         <div class="action-row">
           ${wait ? `<button class="mini-btn confirm" data-plan-action="confirm">Confirmar pagamento</button>
           <button class="mini-btn" data-plan-action="charge">Chamar no WhatsApp</button>
@@ -846,6 +892,10 @@ function planAction(key, action, cutId) {
   if (action === 'charge') return showMessage(client.phone, pendingMessage(client));
   if (action === 'confirm') return confirmPlanPayment(client);
   if (action === 'reject') return rejectPlan(client);
+  if (action === 'cut-msg') {
+    const cut = (client.plan.cuts || []).find(item => item.id === cutId); const appt = cut && state.data.appointments.find(item => item.id === cut.appointmentId);
+    return appt ? showMessage(client.phone, planNotice(appt)) : toast('Agendamento deste corte não encontrado.');
+  }
   if (action === 'remove-cut') return removeCut(client, cutId);
 }
 
