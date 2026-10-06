@@ -15,7 +15,6 @@
       <span><b>WILLZINHO BARBER</b><small>PAINEL ADMINISTRATIVO</small></span>
     </a>
     <div class="admin-header-label">ÁREA RESTRITA</div>
-    <a class="outline-btn desktop-only" href="../">Ver site público <span>↗</span></a>
   </header>
 
   <main id="admin-view" class="admin-shell">
@@ -33,7 +32,7 @@
       <div class="admin-user"><div>AD</div><span><b>Administrador</b><small>Operação da barbearia</small></span></div>
     </aside>
     <section class="admin-content">
-      <div class="admin-top"><div><p class="eyebrow"><span></span> Operação em tempo real</p><h2 id="admin-title">VISÃO GERAL</h2></div><a class="primary-btn small" href="../">Ver site público <span>↗</span></a></div>
+      <div class="admin-top"><div><p class="eyebrow"><span></span> Operação em tempo real</p><h2 id="admin-title">VISÃO GERAL</h2></div></div>
       <section id="admin-dashboard" class="admin-panel"></section>
       <section id="admin-agenda" class="admin-panel hidden"></section>
       <section id="admin-clients" class="admin-panel hidden"></section>
@@ -116,6 +115,26 @@
     <p class="reset-warn" id="reset-warn"></p>
     <label class="reset-label">Digite <b>ZERAR</b> para confirmar<input id="reset-confirm" autocomplete="off" placeholder="ZERAR"></label>
     <button id="reset-run" class="primary-btn full danger-btn" disabled>Apagar agendamentos e clientes</button>
+  </dialog>
+  <dialog id="walkin-dialog" class="app-dialog tall-dialog">
+    <button class="dialog-close" aria-label="Fechar">×</button>
+    <p class="eyebrow"><span></span> Sem agendamento</p><h3>ADICIONAR CLIENTE</h3>
+    <p class="phone-hint">Para quem está na barbearia e não agendou pelo site. O atendimento é registrado hoje, no horário atual.</p>
+    <div class="two-cols">
+      <label class="reset-label">Nome<input id="wk-name" autocomplete="off" placeholder="Nome do cliente"></label>
+      <label class="reset-label">WhatsApp<input id="wk-phone" inputmode="tel" autocomplete="off" placeholder="(00) 00000-0000"></label>
+    </div>
+    <p class="wk-label">Serviço realizado <small>— pode marcar mais de um</small></p>
+    <div id="wk-services" class="wk-services"></div>
+    <button id="wk-save" class="primary-btn full">Registrar atendimento</button>
+  </dialog>
+  <dialog id="client-add-dialog" class="app-dialog">
+    <button class="dialog-close" aria-label="Fechar">×</button>
+    <p class="eyebrow"><span></span> Cadastro</p><h3>NOVO CLIENTE</h3>
+    <p class="phone-hint">Só o cadastro, para facilitar agendamentos futuros.</p>
+    <label class="reset-label">Nome<input id="ca-name" autocomplete="off" placeholder="Nome do cliente"></label>
+    <label class="reset-label">WhatsApp<input id="ca-phone" inputmode="tel" autocomplete="off" placeholder="(00) 00000-0000"></label>
+    <button id="ca-save" class="primary-btn full">Cadastrar cliente</button>
   </dialog>
   <div id="toast" class="toast" role="status"></div>
   <script src="../store.js"></script>
