@@ -522,10 +522,9 @@
       const int = v => (v === null || v === undefined || v === '' || isNaN(Number(v)) || Number(v) < 0) ? null : Math.floor(Number(v));
       if (name.length < 2) return fail(422, 'Informe o nome do usuário.');
       if (key.length < 10 || phoneKey(phone) !== key) return fail(422, 'Informe um telefone válido com DDD.');
-      const monthlyValue = val(body.monthlyValue), planValue = val(body.planValue === '' ? body.monthlyValue : body.planValue);
+      const planValue = val(body.planValue === undefined || body.planValue === '' ? body.monthlyValue : body.planValue), monthlyValue = planValue; // um único valor mensal
       const cutsPerMonth = int(body.cutsPerMonth), dependentsAllowed = int(body.dependentsAllowed ?? 0);
-      if (monthlyValue === null) return fail(422, 'Informe o valor do plano mensal.');
-      if (planValue === null) return fail(422, 'Informe o valor do plano.');
+      if (planValue === null) return fail(422, 'Informe o valor mensal do plano.');
       if (cutsPerMonth === null) return fail(422, 'Informe a quantidade de cortes no mês.');
       if (dependentsAllowed === null) return fail(422, 'Informe a quantidade de dependentes.');
       const dependents = (Array.isArray(body.dependents) ? body.dependents : []).map(d => ({ id: String(d.id || uuid()).slice(0, 60), name: String(d.name || '').trim().slice(0, 80), phone: String(d.phone || '').replace(/\D/g, '').slice(0, 15) })).filter(d => d.name).slice(0, 30);
@@ -560,7 +559,7 @@
       const old = await store.getClient(key); const prev = old && old.plan; const now = new Date().toISOString();
       if (prev && prev.status !== 'pending_payment' && prev.active !== false) return fail(409, 'Este WhatsApp já possui um plano mensal ativo. Fale com a barbearia pelo WhatsApp para alterar.');
       const client = { ...(old || {}), id: key, name: (old && old.name) || name, phone, firstBookingAt: (old && old.firstBookingAt) || now, lastBookingAt: (old && old.lastBookingAt) || null,
-        plan: { ...(prev || {}), active: false, status: 'pending_payment', source: 'site', planName: cfg.name, monthlyValue: cfg.monthlyValue, planValue, cutsPerMonth: cuts, includedCuts: cfg.includedCuts,
+        plan: { ...(prev || {}), active: false, status: 'pending_payment', source: 'site', planName: cfg.name, monthlyValue: planValue, baseValue: cfg.monthlyValue, planValue, cutsPerMonth: cuts, includedCuts: cfg.includedCuts,
           extraCutValue: cfg.extraCutValue, dependentValue: cfg.dependentValue, dependentsAllowed: dependents.length, dependents, cuts: (prev && prev.cuts) || [],
           startedAt: (prev && prev.startedAt) || null, requestedAt: now, updatedAt: now } };
       await store.saveClient(client);

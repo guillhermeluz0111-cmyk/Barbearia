@@ -3,9 +3,10 @@ const SHOP = {
   name: 'Willzinho Barber',
   lines: ['R. Paschoa Lazarotto Toniolo, 9', 'Rio Verde, Colombo — PR', 'CEP 83405-000'],
   query: 'Willzinho Barber, R. Paschoa Lazarotto Toniolo, 9, Rio Verde, Colombo - PR, 83405-000',
-  google: 'https://maps.google.com/maps?vet=10CAAQoqAOahcKEwior5-uwpKXAxUAAAAAHQAAAAAQDA..i&fvr=1&pvq=Cg0vZy8xMWZuNHgxNWxy&cs=1&um=1&ie=UTF-8&fb=1&gl=br&sa=X&ftid=0x94dce9980e240f41:0x1566bbbe915028ed'
+  google: ''
 };
-SHOP.apple = 'https://maps.apple.com/?' + new URLSearchParams({ q: SHOP.name, address: 'R. Paschoa Lazarotto Toniolo, 9, Rio Verde, Colombo - PR, 83405-000' }).toString().replace(/\+/g, '%20');
+SHOP.google = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(SHOP.query);
+SHOP.apple = 'https://maps.apple.com/?q=' + encodeURIComponent(SHOP.query);
 SHOP.embed = 'https://maps.google.com/maps?q=' + encodeURIComponent(SHOP.query) + '&z=16&output=embed';
 const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const mapUrl = () => isIOS() ? SHOP.apple : SHOP.google; // iPhone/iPad abrem o Maps da Apple; os demais, o Google Maps
@@ -260,7 +261,10 @@ function reminderMessage(item) {
 }
 function showMessage(phone, message) {
   $('#message-preview').value = message;
-  $('#open-whatsapp').onclick = () => window.open(`https://wa.me/${waNumber(phone)}?text=${encodeURIComponent($('#message-preview').value)}`, '_blank', 'noopener');
+  $('#open-whatsapp').onclick = () => {
+    window.open(`https://wa.me/${waNumber(phone)}?text=${encodeURIComponent($('#message-preview').value)}`, '_blank', 'noopener');
+    if (state.askAddress) setTimeout(() => $('#message-dialog').close(), 150); // fecha a mensagem: a pergunta do endereço aparece
+  };
   $('#message-dialog').showModal();
 }
 
@@ -859,8 +863,7 @@ function renderPlans() {
       <div class="appointment-head"><strong>${esc(item.name)}</strong><span class="status-pill ${wait ? 'pending_confirmation' : plan.active === false ? 'no_show' : 'attended'}">${wait ? 'Aguardando pagamento' : plan.active === false ? 'Inativo' : 'Ativo'}</span></div>
       <div class="plan-stats">
         <div><small>Telefone</small><b>${esc(phoneFmt(item.phone))}</b></div>
-        <div><small>Plano mensal</small><b>${BRL.format(plan.monthlyValue || 0)}</b></div>
-        <div><small>Valor do plano</small><b>${BRL.format(plan.planValue || 0)}</b></div>
+        <div><small>Valor mensal</small><b>${BRL.format(plan.planValue ?? plan.monthlyValue ?? 0)}</b></div>
         <div><small>Cortes no mês</small><b class="${over ? 'over' : ''}">${used}<em>/${limit}</em></b><span class="plan-bar"><i style="width:${pct}%"></i></span></div>
         <div><small>Dependentes</small><b>${depList.length}<em>/${plan.dependentsAllowed || 0}</em></b></div>
       </div>
@@ -914,7 +917,7 @@ function planAction(key, action, cutId) {
 function planMessage(client) {
   const plan = client.plan; const business = (state.data.config && state.data.config.businessName) || 'nossa barbearia';
   const deps = plan.dependents || [];
-  return `Olá, ${client.name.split(' ')[0]}! Seu plano mensal na ${business} está cadastrado.\n\nPlano mensal: ${BRL.format(plan.monthlyValue || 0)}\nValor do plano: ${BRL.format(plan.planValue || 0)}\nCortes por mês: ${plan.cutsPerMonth}\nDependentes: ${deps.length ? deps.map(dep => dep.name).join(', ') : 'nenhum'}\n\nQualquer dúvida, é só chamar!`;
+  return `Olá, ${client.name.split(' ')[0]}! Seu plano mensal na ${business} está cadastrado.\n\nValor mensal: ${BRL.format(plan.planValue ?? plan.monthlyValue ?? 0)}\nCortes por mês: ${plan.cutsPerMonth}\nDependentes: ${deps.length ? deps.map(dep => dep.name).join(', ') : 'nenhum'}\n\nQualquer dúvida, é só chamar!`;
 }
 
 function pendingMessage(client) {
@@ -958,7 +961,7 @@ function openPlanDialog(client) {
   planDraft.dependents = plan ? (plan.dependents || []).map(dep => ({ ...dep })) : [];
   $('#plan-dialog-title').textContent = client ? 'EDITAR PLANO' : 'NOVO PLANO';
   $('#plan-name').value = client ? client.name : ''; $('#plan-phone').value = client ? phoneFmt(client.phone) : ''; $('#plan-phone').disabled = Boolean(client);
-  $('#plan-monthly').value = plan ? plan.monthlyValue : ''; $('#plan-value').value = plan ? plan.planValue : ''; $('#plan-value').dataset.touched = plan ? '1' : '';
+  $('#plan-monthly').value = plan ? (plan.planValue ?? plan.monthlyValue ?? '') : '';
   $('#plan-cuts').value = plan ? plan.cutsPerMonth : ''; $('#plan-deps-allowed').value = plan ? plan.dependentsAllowed : 0;
   $('#plan-dep-input').value = ''; $('#plan-dep-phone').value = ''; $('#plan-dialog-hint').hidden = true;
   drawPlanDeps(); $('#plan-dialog').showModal();
@@ -992,7 +995,7 @@ async function savePlan() {
   try {
     const isNew = !planDraft.key;
     const { client } = await api(`/api/clients/${key}/plan`, { method: 'PUT', body: JSON.stringify({
-      name: $('#plan-name').value, phone, monthlyValue: $('#plan-monthly').value, planValue: $('#plan-value').value,
+      name: $('#plan-name').value, phone, monthlyValue: $('#plan-monthly').value, planValue: $('#plan-monthly').value,
       cutsPerMonth: $('#plan-cuts').value, dependentsAllowed: $('#plan-deps-allowed').value, dependents: planDraft.dependents
     }) });
     $('#plan-dialog').close(); await reloadState(); renderAdmin(); keepPlanOpen(key); toast('Plano salvo no cadastro do cliente.');
@@ -1036,8 +1039,6 @@ async function removeCut(client, cutId) {
 }
 function wirePlanDialogs() {
   $('#plan-phone').addEventListener('input', () => { formatPhoneInput($('#plan-phone')); lookupPlanClient(); });
-  $('#plan-monthly').addEventListener('input', () => { if (!$('#plan-value').dataset.touched) $('#plan-value').value = $('#plan-monthly').value; });
-  $('#plan-value').addEventListener('input', () => { $('#plan-value').dataset.touched = '1'; });
   $('#plan-deps-allowed').addEventListener('input', drawPlanDeps);
   $('#plan-dep-add').addEventListener('click', addPlanDependent);
   $('#plan-dep-phone').addEventListener('input', () => formatPhoneInput($('#plan-dep-phone')));
@@ -1097,6 +1098,7 @@ function renderLocation() {
   if (ios) $('#loc-actions').insertBefore(apple, google);
   $('#loc-address').innerHTML = SHOP.lines.map(esc).join('<br>');
   const frame = $('#loc-frame'); if (frame && !frame.getAttribute('src')) frame.setAttribute('src', SHOP.embed);
+  const shield = $('#loc-shield'); if (shield) shield.addEventListener('click', () => { shield.hidden = true; });
   $('#loc-copy').addEventListener('click', async () => {
     const text = `${SHOP.name} — ${SHOP.lines.join(', ')}`;
     try { await navigator.clipboard.writeText(text); toast('Endereço copiado.'); } catch (error) { toast(text); }
@@ -1110,8 +1112,8 @@ function wireAddressAsk() {
   const ios = isIOS(); $('#addr-google').className = ios ? 'outline-btn dark' : 'primary-btn'; $('#addr-apple').className = ios ? 'primary-btn' : 'outline-btn dark';
   $('#addr-info-text').innerHTML = SHOP.lines.map(esc).join('<br>');
   $('#addr-yes').addEventListener('click', () => { dialog.close(); toast('Perfeito! Te esperamos na barbearia.'); });
+  $('#addr-no').href = mapUrl(); // link real: abre o mapa do aparelho mesmo em navegadores embutidos
   $('#addr-no').addEventListener('click', () => {
-    window.open(mapUrl(), '_blank', 'noopener'); // abre o mapa do aparelho
     $('#addr-opened').textContent = ios ? 'Abrimos o Maps do iPhone para você. Se preferir, use o Google Maps:' : 'Abrimos o Google Maps para você. Se preferir, use o Maps do iPhone:';
     $('#addr-ask').hidden = true; $('#addr-info').hidden = false;
   });

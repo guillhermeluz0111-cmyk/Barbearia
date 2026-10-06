@@ -225,6 +225,7 @@
         </div>
         <div class="loc-map">
           <iframe id="loc-frame" title="Mapa da Willzinho Barber" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
+          <button type="button" class="loc-shield" id="loc-shield" aria-label="Tocar para mexer no mapa"><span>Toque para mexer no mapa</span></button>
         </div>
       </div>
     </section>
@@ -274,7 +275,7 @@
     <p class="eyebrow"><span></span> Agendamento enviado</p><h3>VOCÊ SABE O ENDEREÇO?</h3>
     <div id="addr-ask">
       <p class="addr-text">Para chegar na hora certa, confirme se você já conhece o caminho até a barbearia.</p>
-      <div class="addr-buttons"><button type="button" class="outline-btn dark" id="addr-yes">Sim</button><button type="button" class="primary-btn" id="addr-no">Não, poderia me informar!</button></div>
+      <div class="addr-buttons"><button type="button" class="outline-btn dark" id="addr-yes">Sim</button><a class="primary-btn" id="addr-no" href="#" target="_blank" rel="noopener">Não, poderia me informar!</a></div>
     </div>
     <div id="addr-info" hidden>
       <address class="loc-address light" id="addr-info-text"></address>
