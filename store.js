@@ -283,10 +283,48 @@
   const PLAN_DEFAULTS = { enabled: false, name: 'Plano Mensal', description: '', monthlyValue: 0, includedCuts: 4, extraCutValue: 0, dependentValue: 0, maxDependents: 3 };
   const planNum = (v, fallback) => (v === null || v === undefined || v === '' || isNaN(Number(v)) || Number(v) < 0) ? fallback : money(v);
   const planInt = (v, fallback) => (v === null || v === undefined || v === '' || isNaN(Number(v)) || Number(v) < 0) ? fallback : Math.floor(Number(v));
+  /* Tabela 2 (serviços dos mensalistas): Corte, Barba e Sobrancelha são fixos em todo plano; os demais o cliente adiciona. */
+  const FIXED_PLAN_SERVICES = [
+    { id: 'fixed-corte', name: 'Corte', rx: /corte|cabelo/i },
+    { id: 'fixed-barba', name: 'Barba', rx: /barba/i },
+    { id: 'fixed-sobrancelha', name: 'Sobrancelha', rx: /sobrancelha/i }
+  ];
+  const normalizePlanServices = list => {
+    const saved = Array.isArray(list) ? list : [];
+    const fixed = FIXED_PLAN_SERVICES.map(f => { const o = saved.find(x => x && x.id === f.id) || {};
+      return { id: f.id, name: f.name, fixed: true, price: planNum(o.price, null), serviceId: o.serviceId ? String(o.serviceId).slice(0, 80) : null }; });
+    const seen = new Set(fixed.map(x => x.id));
+    const extra = saved.filter(x => x && !String(x.id || '').startsWith('fixed-')).map(x => ({ id: String(x.id || uuid()).slice(0, 80), name: String(x.name || '').trim().slice(0, 80), fixed: false,
+      price: planNum(x.price, null), serviceId: x.serviceId ? String(x.serviceId).slice(0, 80) : null })).filter(x => x.name && !seen.has(x.id) && seen.add(x.id));
+    return [...fixed, ...extra].slice(0, 40);
+  };
   const normalizePlan = p => { const o = p || {}; return {
     enabled: Boolean(o.enabled), name: String(o.name || PLAN_DEFAULTS.name).slice(0, 60), description: String(o.description || '').slice(0, 200),
     monthlyValue: planNum(o.monthlyValue, 0), includedCuts: Math.max(1, planInt(o.includedCuts, PLAN_DEFAULTS.includedCuts)),
-    extraCutValue: planNum(o.extraCutValue, 0), dependentValue: planNum(o.dependentValue, 0), maxDependents: planInt(o.maxDependents, PLAN_DEFAULTS.maxDependents) }; };
+    extraCutValue: planNum(o.extraCutValue, 0), dependentValue: planNum(o.dependentValue, 0), maxDependents: planInt(o.maxDependents, PLAN_DEFAULTS.maxDependents), services: normalizePlanServices(o.services) }; };
+
+  const planRowSnapshot = r => ({ id: r.id, name: r.name, price: r.price, fixed: Boolean(r.fixed), serviceId: r.serviceId || null });
+  /* O serviço do catálogo é coberto por uma linha da Tabela 2: pelo vínculo escolhido ou, nas fixas sem vínculo, pelo nome. */
+  const planRowCovers = (row, sv) => {
+    if (row.serviceId) return row.serviceId === sv.id;
+    const f = row.fixed && FIXED_PLAN_SERVICES.find(x => x.id === row.id);
+    return Boolean(f && f.rx.test(sv.name || ''));
+  };
+  /* Serviços de cada visita: os fixos mais os que o cliente adicionou (só entram os que têm preço de mensalista). */
+  function planVisit(cfg, extraIds) {
+    const wanted = new Set(Array.isArray(extraIds) ? extraIds.map(String) : []);
+    const rows = cfg.services.filter(r => r.fixed || (wanted.has(r.id) && r.price > 0));
+    return { rows, perVisit: money(rows.reduce((n, r) => n + (r.price || 0), 0)) };
+  }
+  /* Cortes que o agendamento gasta do plano: planos novos gastam 1 visita por agendamento; planos antigos, 1 corte por serviço. */
+  function buildPlanCuts(q, { date, time, apptId, nowIso, source }) {
+    if (!q) return [];
+    const base = { date, time, dependentId: q.beneficiary ? q.beneficiary.id : null, dependentName: q.beneficiary ? q.beneficiary.name : null, createdAt: nowIso, appointmentId: apptId, source };
+    const inPlan = q.lines.filter(l => l.eligible);
+    if (!inPlan.length) return [];
+    if (q.visit) return [{ id: uuid(), ...base, serviceName: inPlan.map(l => l.name).join(' + '), kind: q.covered ? 'included' : 'extra', charge: money(inPlan.reduce((n, l) => n + l.charge, 0)) }];
+    return inPlan.map(l => ({ id: uuid(), ...base, serviceName: l.name, kind: l.covered ? 'included' : 'extra', charge: l.charge }));
+  }
 
   /* ---------- Assinante: cortes do plano x agendamento ---------- */
   const brl = v => 'R$ ' + Number(v || 0).toFixed(2).replace('.', ',');
@@ -318,26 +356,36 @@
     const usedBefore = (plan.cuts || []).filter(c => String(c.date).slice(0, 7) === month).length;
     const available = Math.max(0, limit - usedBefore);
     const unit = plan.extraCutValue > 0 ? plan.extraCutValue : (cfg.extraCutValue > 0 ? cfg.extraCutValue : null); // sem valor configurado: vale o preço normal
+    const visit = Array.isArray(plan.services) && plan.services.length > 0; // plano novo: cada visita inclui os serviços do plano
     let left = available;
     const lines = services.map(sv => {
       const base = { id: sv.id, name: sv.name, price: sv.price };
+      if (visit) {
+        const row = plan.services.find(r => planRowCovers(r, sv));
+        if (!row) return { ...base, eligible: false, covered: false, charge: sv.price };
+        return available > 0 ? { ...base, eligible: true, covered: true, charge: 0 } : { ...base, eligible: true, covered: false, charge: money(row.price > 0 ? row.price : sv.price) };
+      }
       if (!serviceInPlan(sv)) return { ...base, eligible: false, covered: false, charge: sv.price };
       if (left > 0) { left--; return { ...base, eligible: true, covered: true, charge: 0 }; }
       return { ...base, eligible: true, covered: false, charge: money(unit ?? sv.price) };
     });
-    const eligible = lines.filter(l => l.eligible).length, covered = lines.filter(l => l.covered).length, extra = eligible - covered;
+    const inPlanCount = lines.filter(l => l.eligible).length;
+    const eligible = visit ? Math.min(1, inPlanCount) : inPlanCount;
+    const covered = visit ? (eligible && available > 0 ? 1 : 0) : lines.filter(l => l.covered).length;
+    const extra = eligible - covered;
     const extraCharge = money(lines.filter(l => l.eligible && !l.covered).reduce((n, l) => n + l.charge, 0));
     const servicesTotal = money(lines.reduce((n, l) => n + l.charge, 0));
     const usedAfter = usedBefore + eligible, remainingAfter = Math.max(0, limit - usedAfter);
     const planName = plan.planName || 'Plano mensal';
+    const w = visit ? ['visita', 'visitas'] : ['corte', 'cortes'];
     const text = [`Plano mensal: ${planName} (assinante)`,
-      beneficiary ? `Corte para: ${beneficiary.name} (dependente do plano)` : null,
-      !eligible ? 'Este agendamento não usa corte do plano.' : null,
-      eligible && !available ? 'Os cortes do plano deste mês já acabaram.' : null,
-      eligible ? `Cortes do mês: ${Math.min(usedAfter, limit)} de ${limit} usados (restam ${remainingAfter})` : null,
-      covered ? `Incluso no plano neste agendamento: ${covered} ${covered === 1 ? 'corte' : 'cortes'} (${brl(0)})` : null,
-      extra ? `Corte adicional: ${extra} x ${brl(extraCharge / extra)} = ${brl(extraCharge)} a pagar` : null].filter(Boolean).join('\n');
-    return { subscriber: true, planName, limit, usedBefore, usedAfter, available, remainingAfter, eligible, covered, extra, extraCharge, unit, lines,
+      beneficiary ? `${visit ? 'Visita' : 'Corte'} para: ${beneficiary.name} (dependente do plano)` : null,
+      !eligible ? (visit ? 'Nenhum serviço deste agendamento faz parte do plano.' : 'Este agendamento não usa corte do plano.') : null,
+      eligible && !available ? `${visit ? 'As visitas' : 'Os cortes'} do plano deste mês já acabaram.` : null,
+      eligible ? `${visit ? 'Visitas' : 'Cortes'} do mês: ${Math.min(usedAfter, limit)} de ${limit} usados (restam ${remainingAfter})` : null,
+      covered ? (visit ? `Incluso no plano neste agendamento: ${lines.filter(l => l.eligible).map(l => l.name).join(' + ')} (${brl(0)})` : `Incluso no plano neste agendamento: ${covered} ${covered === 1 ? 'corte' : 'cortes'} (${brl(0)})`) : null,
+      extra ? (visit ? `Visita adicional (preço de mensalista): ${brl(extraCharge)} a pagar` : `Corte adicional: ${extra} x ${brl(extraCharge / extra)} = ${brl(extraCharge)} a pagar`) : null].filter(Boolean).join('\n');
+    return { subscriber: true, visit, planName, limit, usedBefore, usedAfter, available, remainingAfter, eligible, covered, extra, extraCharge, unit, lines,
       servicesTotal, productsTotal, total: money(servicesTotal + productsTotal), beneficiary: beneficiary ? { id: beneficiary.id, name: beneficiary.name } : null,
       dependents: forcedDependent ? [] : deps.map(d => ({ id: d.id, name: d.name })), locked: Boolean(forcedDependent), text };
   }
@@ -429,8 +477,7 @@
       const found = await findPlanByPhone(store, clientId);
       const q = buildQuote(found.owner, normalizePlan(core.config && core.config.monthlyPlan), core, { serviceIds: totals.services.map(x => x.id), productIds: [], date, beneficiaryId: '' }, found.dependent);
       if (q && q.error) return fail(422, q.error);
-      const planCuts = q ? q.lines.filter(l => l.eligible).map(l => ({ id: uuid(), date, time, dependentId: q.beneficiary ? q.beneficiary.id : null, dependentName: q.beneficiary ? q.beneficiary.name : null,
-        createdAt: nowIso, appointmentId: apptId, serviceName: l.name, kind: l.covered ? 'included' : 'extra', charge: l.charge, source: 'walkin' })) : [];
+      const planCuts = buildPlanCuts(q, { date, time, apptId, nowIso, source: 'walkin' });
       const appointment = {
         id: apptId, clientId, customerName, phone, date, time, walkin: true,
         serviceIds: totals.services.map(sv => sv.id),
@@ -482,8 +529,7 @@
       const found = await findPlanByPhone(store, clientId);
       const q = buildQuote(found.owner, normalizePlan(core.config && core.config.monthlyPlan), core, { serviceIds: body.serviceIds, productIds: body.productIds, date: v.date, beneficiaryId: body.beneficiaryId || '' }, found.dependent);
       if (q && q.error) return fail(422, q.error);
-      const planCuts = q ? q.lines.filter(l => l.eligible).map(l => ({ id: uuid(), date: v.date, time: v.time, dependentId: q.beneficiary ? q.beneficiary.id : null, dependentName: q.beneficiary ? q.beneficiary.name : null,
-        createdAt: nowIso, appointmentId: apptId, serviceName: l.name, kind: l.covered ? 'included' : 'extra', charge: l.charge, source: 'booking' })) : [];
+      const planCuts = buildPlanCuts(q, { date: v.date, time: v.time, apptId, nowIso, source: 'booking' });
       const appointment = {
         id: apptId, clientId, customerName: v.customerName, phone: v.phone, date: v.date, time: v.time,
         serviceIds: v.services.map(sv => sv.id),
@@ -581,11 +627,12 @@
 
     /* ---------- Modelo do plano mensal (aba Serviços do painel -> box do site) ---------- */
     if (method === 'PUT' && url.pathname === '/api/plan-config') {
-      const plan = normalizePlan({ ...body, enabled: Boolean(body.enabled) });
+      const coreNow = await getCore(store, true); const prevCfg = (coreNow.config && coreNow.config.monthlyPlan) || {};
+      const plan = normalizePlan({ ...prevCfg, ...body, enabled: Boolean(body.enabled) });
       const strict = (v, label) => (v === null || v === undefined || v === '' || isNaN(Number(v)) || Number(v) < 0) ? `Informe ${label}.` : null;
-      const err = strict(body.monthlyValue, 'o valor mensal do plano') || strict(body.includedCuts, 'a quantidade mínima de cortes') || strict(body.extraCutValue, 'o valor de cada corte adicional') || strict(body.dependentValue, 'o valor adicional por dependente') || strict(body.maxDependents, 'o máximo de dependentes');
+      const err = strict(body.includedCuts, 'a quantidade mínima de visitas') || strict(body.dependentValue, 'o valor adicional por dependente') || strict(body.maxDependents, 'o máximo de dependentes');
       if (err) return fail(422, err);
-      if (Number(body.includedCuts) < 1) return fail(422, 'A quantidade mínima de cortes deve ser pelo menos 1.');
+      if (Number(body.includedCuts) < 1) return fail(422, 'A quantidade mínima de visitas deve ser pelo menos 1.');
       if (!String(body.name || '').trim()) return fail(422, 'Informe o nome do plano.');
       plan.name = String(body.name).trim().slice(0, 60);
       await store.saveMonthlyPlan(plan); bust();
@@ -609,10 +656,11 @@
       const dependents = (Array.isArray(body.dependents) ? body.dependents : []).map(d => ({ id: String(d.id || uuid()).slice(0, 60), name: String(d.name || '').trim().slice(0, 80), phone: String(d.phone || '').replace(/\D/g, '').slice(0, 15) })).filter(d => d.name).slice(0, 30);
       if (dependents.some(d => d.phone && d.phone.length < 10)) return fail(422, 'Informe um WhatsApp válido com DDD para o dependente.');
       if (dependents.length > dependentsAllowed) return fail(422, 'Há mais dependentes cadastrados do que a quantidade permitida no plano.');
+      const fixedServices = normalizePlan(((await getCore(store, true)).config || {}).monthlyPlan).services.filter(r => r.fixed).map(planRowSnapshot);
       const old = await store.getClient(key); const prev = old && old.plan;
       const client = { ...(old || {}), id: key, name, phone, firstBookingAt: (old && old.firstBookingAt) || now, lastBookingAt: (old && old.lastBookingAt) || null,
         plan: { ...(prev || {}), active: body.active === undefined ? !(prev && prev.active === false) : Boolean(body.active), monthlyValue, planValue, cutsPerMonth, dependentsAllowed, dependents,
-          cuts: (prev && prev.cuts) || [], startedAt: (prev && prev.startedAt) || (prev && prev.status === 'pending_payment' ? null : now.slice(0, 10)), updatedAt: now } };
+          cuts: (prev && prev.cuts) || [], startedAt: (prev && prev.startedAt) || (prev && prev.status === 'pending_payment' ? null : now.slice(0, 10)), updatedAt: now, ...(prev ? {} : { services: fixedServices }) } };
       await store.saveClient(client);
       return ok({ client }, prev ? 200 : 201);
     }
@@ -621,24 +669,24 @@
     if (method === 'POST' && url.pathname === '/api/plan-requests') {
       const core = await getCore(store, true);
       const cfg = normalizePlan(core.config && core.config.monthlyPlan);
-      if (!cfg.enabled || cfg.monthlyValue <= 0) return fail(422, 'O plano mensal não está disponível no momento.');
+      const visit = planVisit(cfg, body.serviceIds);
+      if (!cfg.enabled || visit.perVisit <= 0) return fail(422, 'O plano mensal não está disponível no momento.');
       const name = String(body.name || '').trim().slice(0, 80);
       const phone = String(body.phone || '').replace(/\D/g, '').slice(0, 15); const key = phoneKey(phone);
       if (name.length < 2) return fail(422, 'Informe o nome completo.');
       if (key.length < 10) return fail(422, 'Informe um WhatsApp válido com DDD.');
       const cuts = planInt(body.cuts, null);
-      if (cuts === null || cuts < cfg.includedCuts || cuts > 60) return fail(422, `Escolha entre ${cfg.includedCuts} e 60 cortes por mês.`);
+      if (cuts === null || cuts < cfg.includedCuts || cuts > 60) return fail(422, `Escolha entre ${cfg.includedCuts} e 60 visitas por mês.`);
       const rawDeps = Array.isArray(body.dependents) ? body.dependents : [];
       if (rawDeps.length > cfg.maxDependents) return fail(422, `Este plano aceita até ${cfg.maxDependents} dependentes.`);
       if (rawDeps.some(d => String(d.name || '').trim().length < 2)) return fail(422, 'Informe o nome de cada dependente.');
       const dependents = rawDeps.map(d => ({ id: uuid(), name: String(d.name).trim().slice(0, 80), phone: String(d.phone || '').replace(/\D/g, '').slice(0, 15) }));
       if (dependents.some(d => d.phone && d.phone.length < 10)) return fail(422, 'Informe um WhatsApp válido com DDD para o dependente (ou deixe em branco).');
-      const extra = cuts - cfg.includedCuts;
-      const planValue = money(cfg.monthlyValue + dependents.length * cfg.dependentValue + extra * cfg.extraCutValue);
+      const planValue = money(cuts * visit.perVisit + dependents.length * cfg.dependentValue); // visitas x serviços da Tabela 2 + dependentes
       const old = await store.getClient(key); const prev = old && old.plan; const now = new Date().toISOString();
       if (prev && prev.status !== 'pending_payment' && prev.active !== false) return fail(409, 'Este WhatsApp já possui um plano mensal ativo. Fale com a barbearia pelo WhatsApp para alterar.');
       const client = { ...(old || {}), id: key, name: (old && old.name) || name, phone, firstBookingAt: (old && old.firstBookingAt) || now, lastBookingAt: (old && old.lastBookingAt) || null,
-        plan: { ...(prev || {}), active: false, status: 'pending_payment', source: 'site', planName: cfg.name, monthlyValue: planValue, baseValue: cfg.monthlyValue, planValue, cutsPerMonth: cuts, includedCuts: cfg.includedCuts,
+        plan: { ...(prev || {}), active: false, status: 'pending_payment', source: 'site', planName: cfg.name, monthlyValue: planValue, baseValue: money(cuts * visit.perVisit), planValue, perVisitValue: visit.perVisit, services: visit.rows.map(planRowSnapshot), cutsPerMonth: cuts, includedCuts: cfg.includedCuts,
           extraCutValue: cfg.extraCutValue, dependentValue: cfg.dependentValue, dependentsAllowed: dependents.length, dependents, cuts: (prev && prev.cuts) || [],
           startedAt: (prev && prev.startedAt) || null, requestedAt: now, updatedAt: now } };
       await store.saveClient(client);

@@ -977,3 +977,21 @@ a.footer-link:hover{color:var(--orange)}
 .wk-chip small{color:#716a62}
 .wk-chip:hover{border-color:var(--orange)}
 .wk-chip.active{border-color:var(--orange);background:#fff1e8;box-shadow:inset 3px 0 0 var(--orange)}
+
+/* Tabela 2 (serviços dos mensalistas) e montagem do plano no site */
+.fixed-tag{font-style:normal;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;background:#ece5da;color:#716a62;padding:3px 6px;margin-left:6px}
+.plan-svc-table{margin-top:16px}
+.plan-svc-table select{width:100%;min-width:150px;padding:9px 8px;border:1px solid #c8c0b5;background:#fffdf8;color:var(--ink);font:inherit;font-size:12px}
+.pc-add{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0 0}
+.pc-add select{min-width:240px;padding:10px 8px;border:1px solid #c8c0b5;background:#fffdf8;color:var(--ink);font:inherit;font-size:12px}
+.plan-svcs{display:grid;gap:8px}
+.plan-svcs-title{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:#847d73;margin-top:2px}
+.plan-svc{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border:1px solid #d8d0c3;background:#fff;color:var(--ink);font:inherit;text-align:left}
+button.plan-svc{cursor:pointer;transition:.15s}
+button.plan-svc:hover{border-color:var(--orange)}
+.plan-svc i{flex:none;width:20px;height:20px;border-radius:50%;background:#e3dccf;color:#716a62;font-style:normal;font-size:12px;font-weight:800;display:grid;place-items:center}
+.plan-svc span{flex:1;font-size:13px;font-weight:700}
+.plan-svc span em{display:block;font-style:normal;font-weight:500;font-size:11px;color:#847d73;margin-top:2px}
+.plan-svc b{font-size:13px;flex:none}
+.plan-svc.fixed i,.plan-svc.on i{background:var(--orange);color:#fff}
+.plan-svc.on{border-color:var(--orange);background:#fff7f2}
