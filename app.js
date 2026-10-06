@@ -6,10 +6,8 @@ const SHOP = {
   google: ''
 };
 SHOP.google = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(SHOP.query);
-SHOP.apple = 'https://maps.apple.com/?q=' + encodeURIComponent(SHOP.query);
 SHOP.embed = 'https://maps.google.com/maps?q=' + encodeURIComponent(SHOP.query) + '&z=16&output=embed';
-const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-const mapUrl = () => isIOS() ? SHOP.apple : SHOP.google; // iPhone/iPad abrem o Maps da Apple; os demais, o Google Maps
+const mapUrl = () => SHOP.google;
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -1092,10 +1090,7 @@ function wireNavHighlight() {
 }
 function renderLocation() {
   const google = $('#loc-google'); if (!google) return;
-  const apple = $('#loc-apple'); google.href = SHOP.google; apple.href = SHOP.apple;
-  const ios = isIOS(); // o botão do aparelho fica em destaque e vem primeiro
-  google.className = ios ? 'outline-btn' : 'primary-btn'; apple.className = ios ? 'primary-btn' : 'outline-btn';
-  if (ios) $('#loc-actions').insertBefore(apple, google);
+  google.href = SHOP.google;
   $('#loc-address').innerHTML = SHOP.lines.map(esc).join('<br>');
   const frame = $('#loc-frame'); if (frame && !frame.getAttribute('src')) frame.setAttribute('src', SHOP.embed);
   const shield = $('#loc-shield'); if (shield) shield.addEventListener('click', () => { shield.hidden = true; });
@@ -1108,13 +1103,12 @@ function renderLocation() {
 /* Depois do agendamento: "Você sabe o endereço?" */
 function wireAddressAsk() {
   const dialog = $('#address-dialog'); if (!dialog) return;
-  $('#addr-google').href = SHOP.google; $('#addr-apple').href = SHOP.apple;
-  const ios = isIOS(); $('#addr-google').className = ios ? 'outline-btn dark' : 'primary-btn'; $('#addr-apple').className = ios ? 'primary-btn' : 'outline-btn dark';
+  $('#addr-google').href = SHOP.google;
   $('#addr-info-text').innerHTML = SHOP.lines.map(esc).join('<br>');
   $('#addr-yes').addEventListener('click', () => { dialog.close(); toast('Perfeito! Te esperamos na barbearia.'); });
   $('#addr-no').href = mapUrl(); // link real: abre o mapa do aparelho mesmo em navegadores embutidos
   $('#addr-no').addEventListener('click', () => {
-    $('#addr-opened').textContent = ios ? 'Abrimos o Maps do iPhone para você. Se preferir, use o Google Maps:' : 'Abrimos o Google Maps para você. Se preferir, use o Maps do iPhone:';
+    $('#addr-opened').textContent = 'Abrimos o Google Maps para você. Se não abriu, use o botão abaixo:';
     $('#addr-ask').hidden = true; $('#addr-info').hidden = false;
   });
   const messageDialog = $('#message-dialog');
