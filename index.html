@@ -29,6 +29,7 @@
       <a class="nav-link" href="#booking">Agendar</a>
       <a class="nav-link" id="nav-plano" href="#plano" style="display:none">Plano</a>
       <a class="nav-link" href="#avaliacoes">Avaliações</a>
+      <a class="nav-link" href="#localizacao">Localização</a>
       <a class="nav-link" href="#contato">Contato</a>
     </nav>
     <a class="primary-btn small topbar-cta" href="#booking">Agendar <span>→</span></a>
@@ -203,6 +204,30 @@
         <a class="outline-btn" href="https://maps.google.com/maps?vet=10CAAQoqAOahcKEwior5-uwpKXAxUAAAAAHQAAAAAQDA..i&fvr=1&pvq=Cg0vZy8xMWZuNHgxNWxy&cs=1&um=1&ie=UTF-8&fb=1&gl=br&sa=X&ftid=0x94dce9980e240f41:0x1566bbbe915028ed" target="_blank" rel="noopener">Ver avaliações no Google <span>↗</span></a>
       </div>
     </section>
+
+    <!-- 4.1 LOCALIZAÇÃO -->
+    <section class="location" id="localizacao">
+      <div class="sec-head">
+        <p class="eyebrow center"><span></span> Localização <span></span></p>
+        <h2>COMO <em>chegar</em></h2>
+        <p>Toque para abrir a rota direto no seu aplicativo de mapas.</p>
+      </div>
+      <div class="loc-grid">
+        <div class="loc-card">
+          <div class="loc-pin" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
+          <h3>WILLZINHO BARBER</h3>
+          <address class="loc-address" id="loc-address">R. Paschoa Lazarotto Toniolo, 9<br>Rio Verde, Colombo — PR<br>CEP 83405-000</address>
+          <div class="loc-actions" id="loc-actions">
+            <a class="primary-btn" id="loc-google" href="#" target="_blank" rel="noopener">Abrir no Google Maps <span>↗</span></a>
+            <a class="outline-btn" id="loc-apple" href="#" target="_blank" rel="noopener">Abrir no Maps do iPhone <span>↗</span></a>
+            <button type="button" class="link-btn" id="loc-copy">Copiar endereço</button>
+          </div>
+        </div>
+        <div class="loc-map">
+          <iframe id="loc-frame" title="Mapa da Willzinho Barber" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
+        </div>
+      </div>
+    </section>
   </main>
 
   <!-- 5. RODAPÉ -->
@@ -243,6 +268,19 @@
     <p class="eyebrow"><span></span> Mensagem pronta</p><h3>CONFIRA ANTES DE ENVIAR</h3>
     <textarea id="message-preview" rows="8"></textarea>
     <button id="open-whatsapp" class="primary-btn full">Abrir WhatsApp <span>↗</span></button>
+  </dialog>
+  <dialog id="address-dialog" class="app-dialog">
+    <button class="dialog-close" aria-label="Fechar">×</button>
+    <p class="eyebrow"><span></span> Agendamento enviado</p><h3>VOCÊ SABE O ENDEREÇO?</h3>
+    <div id="addr-ask">
+      <p class="addr-text">Para chegar na hora certa, confirme se você já conhece o caminho até a barbearia.</p>
+      <div class="addr-buttons"><button type="button" class="outline-btn dark" id="addr-yes">Sim</button><button type="button" class="primary-btn" id="addr-no">Não, poderia me informar!</button></div>
+    </div>
+    <div id="addr-info" hidden>
+      <address class="loc-address light" id="addr-info-text"></address>
+      <p class="addr-text" id="addr-opened">Abrimos o mapa para você.</p>
+      <div class="addr-buttons col"><a class="primary-btn" id="addr-google" href="#" target="_blank" rel="noopener">Abrir no Google Maps <span>↗</span></a><a class="outline-btn dark" id="addr-apple" href="#" target="_blank" rel="noopener">Abrir no Maps do iPhone <span>↗</span></a></div>
+    </div>
   </dialog>
   <dialog id="plan-signup-dialog" class="app-dialog tall-dialog">
     <button class="dialog-close" aria-label="Fechar">×</button>

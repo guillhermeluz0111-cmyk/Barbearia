@@ -1,3 +1,15 @@
+/* ---------- Endereço / mapas ---------- */
+const SHOP = {
+  name: 'Willzinho Barber',
+  lines: ['R. Paschoa Lazarotto Toniolo, 9', 'Rio Verde, Colombo — PR', 'CEP 83405-000'],
+  query: 'Willzinho Barber, R. Paschoa Lazarotto Toniolo, 9, Rio Verde, Colombo - PR, 83405-000',
+  google: 'https://maps.google.com/maps?vet=10CAAQoqAOahcKEwior5-uwpKXAxUAAAAAHQAAAAAQDA..i&fvr=1&pvq=Cg0vZy8xMWZuNHgxNWxy&cs=1&um=1&ie=UTF-8&fb=1&gl=br&sa=X&ftid=0x94dce9980e240f41:0x1566bbbe915028ed'
+};
+SHOP.apple = 'https://maps.apple.com/?' + new URLSearchParams({ q: SHOP.name, address: 'R. Paschoa Lazarotto Toniolo, 9, Rio Verde, Colombo - PR, 83405-000' }).toString().replace(/\+/g, '%20');
+SHOP.embed = 'https://maps.google.com/maps?q=' + encodeURIComponent(SHOP.query) + '&z=16&output=embed';
+const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const mapUrl = () => isIOS() ? SHOP.apple : SHOP.google; // iPhone/iPad abrem o Maps da Apple; os demais, o Google Maps
+
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const state = { data: null, selected: [], date: '', time: '', rescheduleId: null, rescheduleTime: '', clientKey: null, clientQuery: '', products: [], clientMode: '', foundName: '', autoName: '', lookingUp: false, step: 1, saving: false, weekStart: 0 };
@@ -261,7 +273,7 @@ async function confirmBooking() {
       date: state.date, time: state.time, serviceIds: state.selected, productIds: state.products, beneficiaryId: state.beneficiary || ''
     }) });
     state.saving = false; resetBooking();
-    showMessage(result.whatsapp, bookingMessage(result.appointment));
+    showMessage(result.whatsapp, bookingMessage(result.appointment)); state.askAddress = true;
     toast('Agendamento salvo com sucesso.');
   } catch (error) {
     state.saving = false; toast(error.message);
@@ -1068,7 +1080,7 @@ function renderOpenStatus() {
   label.textContent = text; dot.className = `dot ${kind}`;
 }
 function wireNavHighlight() {
-  const links = $$('.site-header .nav-link'); const sections = ['trabalho', 'booking', 'plano', 'avaliacoes', 'contato'].map(id => document.getElementById(id));
+  const links = $$('.site-header .nav-link'); const sections = ['trabalho', 'booking', 'plano', 'avaliacoes', 'localizacao', 'contato'].map(id => document.getElementById(id));
   if (!('IntersectionObserver' in window)) return;
   const observer = new IntersectionObserver(entries => entries.forEach(entry => {
     if (entry.isIntersecting) links.forEach(link => link.classList.toggle('active', link.getAttribute('href') === `#${entry.target.id}`));
@@ -1077,8 +1089,41 @@ function wireNavHighlight() {
   const top = document.getElementById('inicio');
   if (top) new IntersectionObserver(entries => entries.forEach(entry => { if (entry.isIntersecting) links.forEach(link => link.classList.remove('active')); }), { rootMargin: '-45% 0px -50% 0px' }).observe(top);
 }
+function renderLocation() {
+  const google = $('#loc-google'); if (!google) return;
+  const apple = $('#loc-apple'); google.href = SHOP.google; apple.href = SHOP.apple;
+  const ios = isIOS(); // o botão do aparelho fica em destaque e vem primeiro
+  google.className = ios ? 'outline-btn' : 'primary-btn'; apple.className = ios ? 'primary-btn' : 'outline-btn';
+  if (ios) $('#loc-actions').insertBefore(apple, google);
+  $('#loc-address').innerHTML = SHOP.lines.map(esc).join('<br>');
+  const frame = $('#loc-frame'); if (frame && !frame.getAttribute('src')) frame.setAttribute('src', SHOP.embed);
+  $('#loc-copy').addEventListener('click', async () => {
+    const text = `${SHOP.name} — ${SHOP.lines.join(', ')}`;
+    try { await navigator.clipboard.writeText(text); toast('Endereço copiado.'); } catch (error) { toast(text); }
+  });
+}
+
+/* Depois do agendamento: "Você sabe o endereço?" */
+function wireAddressAsk() {
+  const dialog = $('#address-dialog'); if (!dialog) return;
+  $('#addr-google').href = SHOP.google; $('#addr-apple').href = SHOP.apple;
+  const ios = isIOS(); $('#addr-google').className = ios ? 'outline-btn dark' : 'primary-btn'; $('#addr-apple').className = ios ? 'primary-btn' : 'outline-btn dark';
+  $('#addr-info-text').innerHTML = SHOP.lines.map(esc).join('<br>');
+  $('#addr-yes').addEventListener('click', () => { dialog.close(); toast('Perfeito! Te esperamos na barbearia.'); });
+  $('#addr-no').addEventListener('click', () => {
+    window.open(mapUrl(), '_blank', 'noopener'); // abre o mapa do aparelho
+    $('#addr-opened').textContent = ios ? 'Abrimos o Maps do iPhone para você. Se preferir, use o Google Maps:' : 'Abrimos o Google Maps para você. Se preferir, use o Maps do iPhone:';
+    $('#addr-ask').hidden = true; $('#addr-info').hidden = false;
+  });
+  const messageDialog = $('#message-dialog');
+  messageDialog.addEventListener('close', () => { // a pergunta aparece quando a mensagem do WhatsApp é fechada
+    if (!state.askAddress) return; state.askAddress = false;
+    $('#addr-ask').hidden = false; $('#addr-info').hidden = true; dialog.showModal();
+  });
+}
+
 function renderPublicInfo() {
-  renderPublicHours(); renderOpenStatus(); wireNavHighlight();
+  renderPublicHours(); renderOpenStatus(); wireNavHighlight(); renderLocation(); wireAddressAsk();
   const year = $('#year'); if (year) year.textContent = new Date().getFullYear();
 }
 

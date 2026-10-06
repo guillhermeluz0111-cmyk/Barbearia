@@ -899,3 +899,29 @@ a.footer-link:hover{color:var(--orange)}
 .plan-tag{font-style:normal;font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;background:var(--orange);color:#fff;padding:2px 6px;margin-left:4px}
 .cut-tag{font-style:normal;font-size:10px;color:#847d73}
 .cut-tag.extra{color:#b3541a;font-weight:800}
+
+
+/* ---------- Localização ---------- */
+.location{padding:120px 7vw;background:#161513;border-top:1px solid var(--line)}
+.loc-grid{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.3fr);max-width:1100px;margin:0 auto;border:1px solid var(--line);background:#1a1916}
+.loc-card{padding:38px 34px;display:flex;flex-direction:column;gap:18px;justify-content:center}
+.loc-pin{width:46px;height:46px;border-radius:50%;background:var(--orange);display:grid;place-items:center}
+.loc-pin .ico{width:22px;height:22px;stroke:#fff;fill:none;stroke-width:2}
+.loc-card h3{font-family:var(--display);font-weight:400;font-size:clamp(30px,3.4vw,40px);letter-spacing:.03em;margin:0}
+.loc-address{font-style:normal;line-height:1.8;font-size:14px;color:var(--paper)}
+.loc-address.light{color:var(--ink);background:#efe8da;border-left:3px solid var(--orange);padding:12px 14px;margin:0 0 14px;font-size:13px}
+.loc-actions{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+.loc-actions .primary-btn,.loc-actions .outline-btn{text-align:center;text-decoration:none;display:block}
+.loc-actions .link-btn{align-self:flex-start;color:var(--muted)}
+.loc-map{min-height:360px;background:#0f0e0c}
+.loc-map iframe{width:100%;height:100%;min-height:360px;border:0;filter:grayscale(.35) contrast(1.05)}
+@media(max-width:900px){.loc-grid{grid-template-columns:minmax(0,1fr)}.loc-map,.loc-map iframe{min-height:280px}}
+@media(max-width:600px){.location{padding:80px 20px}.loc-card{padding:28px 22px}}
+/* pergunta do endereço após agendar */
+.addr-text{color:#5f584e;font-size:13px;line-height:1.7;margin:0 0 16px}
+.addr-buttons{display:flex;gap:10px;flex-wrap:wrap}
+.addr-buttons>*{flex:1 1 150px;text-align:center;text-decoration:none;padding:15px 16px}
+.addr-buttons.col{flex-direction:column}
+.outline-btn.dark{color:var(--ink);border-color:#b9b0a2;background:transparent}
+.outline-btn.dark:hover{border-color:var(--orange);color:var(--orange)}
+#address-dialog .primary-btn,#address-dialog .outline-btn{display:block}
