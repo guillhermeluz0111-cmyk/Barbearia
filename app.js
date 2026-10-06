@@ -348,6 +348,41 @@ function wireClientStep() {
   $('#customer-phone').addEventListener('input', () => scheduleLookup());
 }
 
+/* ---------- Público: histórico de cortes do mês do assinante ---------- */
+async function loadPlanHistory() {
+  const phone = $('#ph-phone').value.replace(/\D/g, ''); const box = $('#ph-result');
+  if (phone.length < 10) { box.innerHTML = '<p class="muted">Informe o WhatsApp do titular com DDD.</p>'; return; }
+  box.innerHTML = '<p class="muted">Buscando…</p>';
+  try {
+    const r = await api(`/api/plan-history?phone=${encodeURIComponent(phone)}`);
+    if (r.dependent) { box.innerHTML = '<p class="muted">Este número é de um dependente. O histórico do plano fica com o titular — consulte com o número dele.</p>'; return; }
+    if (!r.subscriber) { box.innerHTML = '<p class="muted">Não encontramos um plano ativo para este WhatsApp.</p>'; return; }
+    const [year, month] = r.month.split('-');
+    const monthLabel = new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', month: 'long', year: 'numeric' }).format(new Date(Date.UTC(Number(year), Number(month) - 1, 15)));
+    const weekday = date => new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', weekday: 'long' }).format(new Date(`${date}T12:00:00Z`));
+    box.innerHTML = `<div class="ph-head"><b>${esc(r.planName)}</b><span>${esc(monthLabel)}</span></div>
+      <p class="ph-count"><strong>${r.used}</strong> ${r.used === 1 ? 'corte realizado' : 'cortes realizados'}${r.limit ? ` de ${r.limit} no mês` : ' no mês'}</p>
+      <div class="ph-list">${r.cuts.length ? r.cuts.map(cut => `<div class="ph-line"><div class="ph-when"><b>${dateFmt(cut.date)}${cut.time ? ` · ${esc(cut.time)}` : ''}</b><small>${esc(weekday(cut.date))}${cut.serviceName ? ` · ${esc(cut.serviceName)}` : ''}</small></div><span class="ph-who ${cut.dependentName ? 'dep' : ''}">${cut.dependentName ? esc(cut.dependentName) : 'Titular'}</span></div>`).join('') : '<p class="muted">Nenhum corte registrado neste mês.</p>'}</div>`;
+  } catch (error) { box.innerHTML = `<p class="muted">${esc(error.message)}</p>`; }
+}
+function wirePlanHistory() {
+  const dialog = $('#plan-history-dialog'); if (!dialog) return;
+  // Os botões "Ver histórico" são criados dinamicamente, então usamos delegação de eventos (registrada uma única vez).
+  if (!wirePlanHistory.bound) {
+    wirePlanHistory.bound = true;
+    document.addEventListener('click', event => {
+      if (!event.target.closest('[data-plan-history]')) return;
+      const typed = ($('#customer-phone') && $('#customer-phone').value) || '';
+      $('#ph-phone').value = typed; $('#ph-result').innerHTML = '';
+      if (!dialog.open) dialog.showModal();
+      if (typed.replace(/\D/g, '').length >= 10) loadPlanHistory(); else $('#ph-phone').focus();
+    });
+  }
+  $('#ph-phone').addEventListener('input', () => formatPhoneInput($('#ph-phone')));
+  $('#ph-phone').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); loadPlanHistory(); } });
+  $('#ph-load').addEventListener('click', loadPlanHistory);
+}
+
 function wirePublic() {
   $('#booking-date').min = todayISO();
   $('#booking-date').addEventListener('change', event => selectDate(event.target.value));
@@ -481,7 +516,7 @@ function planConfigHTML(p) {
       <label class="reset-label pc-wide">Descrição (opcional)<input id="pc-desc" autocomplete="off" maxlength="200" value="${esc(p.description)}" placeholder="Ex.: Atendimento prioritário, desconto em produtos…"></label>
     </div>
     <table class="data-table plan-svc-table"><thead><tr><th>Serviço</th><th>Preço mensalista (R$)</th><th>Preço normal</th><th>Serviço do catálogo</th><th></th></tr></thead><tbody>${planRowsDraft.map(rowHTML).join('')}</tbody></table>
-    <div class="pc-add"><select id="pc-add-service" aria-label="Serviço para adicionar">${free.length ? free.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('') : '<option value="">Todos os serviços do catálogo já estão na tabela</option>'}</select><button type="button" class="mini-btn confirm" id="pc-add-btn" ${free.length ? '' : 'disabled'}>Adicionar à tabela</button></div>
+    <div class="pc-add"><select id="pc-add-service" aria-label="Serviço para adicionar">${free.length ? free.map(s => `<option value="${esc(s.id)}">${esc(s.name)}${s.price !== null && s.price !== undefined ? ` — preço normal ${BRL.format(s.price)}` : ''}</option>`).join('') : '<option value="">Todos os serviços do catálogo já estão na tabela</option>'}</select><input id="pc-add-price" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="Preço mensalista (R$)" aria-label="Preço de mensalista do serviço" ${free.length ? '' : 'disabled'}><button type="button" class="mini-btn confirm" id="pc-add-btn" ${free.length ? '' : 'disabled'}>Adicionar à tabela</button></div>
     <p class="pc-preview" id="pc-preview"></p>
     <button class="primary-btn small" id="pc-save">Salvar plano</button>`;
 }
@@ -501,7 +536,9 @@ function updatePlanPreview() {
     : 'Defina o preço de mensalista de Corte, Barba e Sobrancelha para o plano aparecer no site.';
 }
 function drawPlanConfig() {
-  const form = readPlanForm(); $('#plan-config').innerHTML = planConfigHTML({ ...planOf(), ...form }); updatePlanPreview();
+  const form = readPlanForm(); const typed = $('#pc-add-price') ? $('#pc-add-price').value : '';
+  $('#plan-config').innerHTML = planConfigHTML({ ...planOf(), ...form }); updatePlanPreview();
+  if (typed && $('#pc-add-price') && !$('#pc-add-price').disabled && form.services.length === planRowsDraft.length) $('#pc-add-price').value = typed;
 }
 function wirePlanConfig(root) {
   const card = $('#plan-config', root); if (!card) return; updatePlanPreview();
@@ -512,10 +549,17 @@ function wirePlanConfig(root) {
     if (remove) { planRowsDraft = planRowsDraft.filter(r => r.id !== remove.closest('tr').dataset.prow); return drawPlanConfig(); }
     if (event.target.closest('#pc-add-btn')) {
       const service = state.data.services.find(s => s.id === $('#pc-add-service').value); if (!service) return;
-      planRowsDraft.push({ id: newId(), name: service.name, fixed: false, price: null, serviceId: service.id }); return drawPlanConfig();
+      const priceInput = $('#pc-add-price'); const price = Number(priceInput.value);
+      if (!priceInput.value || !(price > 0)) { toast(`Informe o preço de mensalista de ${service.name}.`); priceInput.classList.add('need-price'); return priceInput.focus(); }
+      planRowsDraft.push({ id: newId(), name: service.name, fixed: false, price: String(price), serviceId: service.id }); return drawPlanConfig();
     }
     const save = event.target.closest('#pc-save');
     if (save) {
+      const missing = planRowsDraft.find(r => !r.fixed && !(Number(r.price) > 0));
+      if (missing) {
+        const input = $(`[data-prow="${missing.id}"] [data-pfield="price"]`, card);
+        toast(`Informe o preço de mensalista de ${missing.name}.`); if (input) { input.classList.add('need-price'); input.focus(); } return;
+      }
       save.disabled = true;
       try { await api('/api/plan-config', { method: 'PUT', body: JSON.stringify(readPlanForm()) }); await reloadState(); renderServiceAdmin(); toast('Plano mensal salvo.'); }
       catch (error) { toast(error.message); save.disabled = false; }
@@ -523,6 +567,7 @@ function wirePlanConfig(root) {
   });
   card.addEventListener('input', event => {
     if (event.target.dataset.pfield === 'price') { const row = rowOf(event.target); if (row) row.price = event.target.value; }
+    event.target.classList.remove('need-price');
     updatePlanPreview();
   });
   card.addEventListener('change', event => {

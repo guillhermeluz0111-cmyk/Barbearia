@@ -983,6 +983,8 @@ a.footer-link:hover{color:var(--orange)}
 .plan-svc-table{margin-top:16px}
 .plan-svc-table select{width:100%;min-width:150px;padding:9px 8px;border:1px solid #c8c0b5;background:#fffdf8;color:var(--ink);font:inherit;font-size:12px}
 .pc-add{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0 0}
+.pc-add input{width:190px;padding:10px 8px;border:1px solid #c8c0b5;background:#fffdf8;color:var(--ink);font:inherit;font-size:12px}
+.need-price{border-color:#c0392b !important;box-shadow:0 0 0 2px rgba(192,57,43,.18)}
 .pc-add select{min-width:240px;padding:10px 8px;border:1px solid #c8c0b5;background:#fffdf8;color:var(--ink);font:inherit;font-size:12px}
 .plan-svcs{display:grid;gap:8px}
 .plan-svcs-title{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:#847d73;margin-top:2px}
