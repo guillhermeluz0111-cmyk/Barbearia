@@ -292,9 +292,23 @@
   const brl = v => 'R$ ' + Number(v || 0).toFixed(2).replace('.', ',');
   const isSubscriber = c => Boolean(c && c.plan && c.plan.status !== 'pending_payment' && c.plan.active !== false);
   const serviceInPlan = sv => (sv.inPlan === undefined || sv.inPlan === null) ? /corte|cabelo/i.test(sv.name || '') : Boolean(sv.inPlan);
+  /* Acha o plano ligado a um WhatsApp: o do próprio titular ou o de quem tem este número como dependente. */
+  async function findPlanByPhone(store, key) {
+    const own = await store.getClient(key);
+    if (isSubscriber(own)) return { owner: own, own, dependent: null };
+    const all = await store.listClients();
+    for (const c of all) {
+      if (!isSubscriber(c) || c.id === key) continue;
+      const dep = (c.plan.dependents || []).find(d => d.phone && phoneKey(d.phone) === key);
+      if (dep) return { owner: c, own, dependent: dep };
+    }
+    return { owner: null, own, dependent: null };
+  }
+
   /* Calcula, para um assinante, quantos cortes do plano o agendamento usa e quanto ainda precisa ser cobrado. */
-  function buildQuote(client, cfg, core, body) {
+  function buildQuote(client, cfg, core, body, forcedDependent) {
     if (!isSubscriber(client)) return null;
+    if (forcedDependent) body = { ...body, beneficiaryId: forcedDependent.id }; // número de dependente: o corte é dele
     const plan = client.plan; const date = validDate(String(body.date || '')) ? String(body.date) : dateISO(new Date());
     const services = selectedServices(core, body.serviceIds); const products = selectedProducts(core, body.productIds);
     const productsTotal = money(products.reduce((n, p) => n + p.price, 0));
@@ -317,7 +331,7 @@
     const usedAfter = usedBefore + eligible, remainingAfter = Math.max(0, limit - usedAfter);
     const planName = plan.planName || 'Plano mensal';
     const text = [`Plano mensal: ${planName} (assinante)`,
-      beneficiary ? `Corte para: ${beneficiary.name} (dependente)` : null,
+      beneficiary ? `Corte para: ${beneficiary.name} (dependente do plano)` : null,
       !eligible ? 'Este agendamento não usa corte do plano.' : null,
       eligible && !available ? 'Os cortes do plano deste mês já acabaram.' : null,
       eligible ? `Cortes do mês: ${Math.min(usedAfter, limit)} de ${limit} usados (restam ${remainingAfter})` : null,
@@ -325,11 +339,11 @@
       extra ? `Corte adicional: ${extra} x ${brl(extraCharge / extra)} = ${brl(extraCharge)} a pagar` : null].filter(Boolean).join('\n');
     return { subscriber: true, planName, limit, usedBefore, usedAfter, available, remainingAfter, eligible, covered, extra, extraCharge, unit, lines,
       servicesTotal, productsTotal, total: money(servicesTotal + productsTotal), beneficiary: beneficiary ? { id: beneficiary.id, name: beneficiary.name } : null,
-      dependents: deps.map(d => ({ id: d.id, name: d.name })), text };
+      dependents: forcedDependent ? [] : deps.map(d => ({ id: d.id, name: d.name })), locked: Boolean(forcedDependent), text };
   }
 
   async function syncPlanCuts(store, appt, action) {
-    const c = await store.getClient(appt.clientId); if (!c || !c.plan) return;
+    const c = await store.getClient(appt.planOwnerId || appt.clientId); if (!c || !c.plan) return;
     const ids = new Set(appt.planCuts.map(x => x.id));
     c.plan.cuts = (c.plan.cuts || []).filter(x => !ids.has(x.id));
     if (action === 'restore') c.plan.cuts.push(...appt.planCuts.map(x => ({ ...x, date: appt.date })));
@@ -367,19 +381,19 @@
     if (method === 'GET' && url.pathname === '/api/client') {
       const key = phoneKey(url.searchParams.get('phone'));
       if (key.length < 10) return ok({ client: null });
-      const c = await store.getClient(key);
-      const sub = isSubscriber(c);
-      return ok({ client: c && c.name ? { name: c.name, subscriber: sub, planName: sub ? (c.plan.planName || 'Plano mensal') : null } : null });
+      const { owner, own, dependent } = await findPlanByPhone(store, key);
+      const name = (own && own.name) || (dependent && dependent.name) || null;
+      return ok({ client: name ? { name, subscriber: Boolean(owner), dependent: Boolean(dependent), planName: owner ? (owner.plan.planName || 'Plano mensal') : null } : null });
     }
 
     /* Prévia do agendamento para assinantes: cortes restantes, valor zerado ou cobrança do corte adicional. */
     if (method === 'GET' && url.pathname === '/api/plan-quote') {
       const key = phoneKey(url.searchParams.get('phone'));
       if (key.length < 10) return ok({ subscriber: false });
-      const [core, c] = await Promise.all([getCore(store, true), store.getClient(key)]);
-      const q = buildQuote(c, normalizePlan(core.config && core.config.monthlyPlan), core, {
+      const [core, found] = await Promise.all([getCore(store, true), findPlanByPhone(store, key)]);
+      const q = buildQuote(found.owner, normalizePlan(core.config && core.config.monthlyPlan), core, {
         serviceIds: (url.searchParams.get('services') || '').split(',').filter(Boolean), productIds: (url.searchParams.get('products') || '').split(',').filter(Boolean),
-        date: url.searchParams.get('date'), beneficiaryId: url.searchParams.get('beneficiary') || '' });
+        date: url.searchParams.get('date'), beneficiaryId: url.searchParams.get('beneficiary') || '' }, found.dependent);
       if (!q) return ok({ subscriber: false });
       if (q.error) return fail(422, q.error);
       return ok(q);
@@ -401,7 +415,8 @@
       const v = validateBooking({ ...core, appointments }, body, null);
       if (v.error) return fail(422, v.error);
       const clientId = phoneKey(v.phone); const apptId = uuid(); const nowIso = new Date().toISOString();
-      const q = buildQuote(await store.getClient(clientId), normalizePlan(core.config && core.config.monthlyPlan), core, { serviceIds: body.serviceIds, productIds: body.productIds, date: v.date, beneficiaryId: body.beneficiaryId || '' });
+      const found = await findPlanByPhone(store, clientId);
+      const q = buildQuote(found.owner, normalizePlan(core.config && core.config.monthlyPlan), core, { serviceIds: body.serviceIds, productIds: body.productIds, date: v.date, beneficiaryId: body.beneficiaryId || '' }, found.dependent);
       if (q && q.error) return fail(422, q.error);
       const planCuts = q ? q.lines.filter(l => l.eligible).map(l => ({ id: uuid(), date: v.date, time: v.time, dependentId: q.beneficiary ? q.beneficiary.id : null, dependentName: q.beneficiary ? q.beneficiary.name : null,
         createdAt: nowIso, appointmentId: apptId, serviceName: l.name, kind: l.covered ? 'included' : 'extra', charge: l.charge, source: 'booking' })) : [];
@@ -420,10 +435,10 @@
       if (q) {
         appointment.planInfo = { planName: q.planName, limit: q.limit, usedBefore: q.usedBefore, usedAfter: q.usedAfter, remainingAfter: q.remainingAfter, eligible: q.eligible, covered: q.covered, extra: q.extra,
           extraCharge: q.extraCharge, listTotal: v.total, beneficiaryName: q.beneficiary ? q.beneficiary.name : null, text: q.text };
-        appointment.planCuts = planCuts;
+        appointment.planCuts = planCuts; appointment.planOwnerId = found.owner.id;
       }
       await store.createAppointment(appointment);
-      if (planCuts.length) { const c = await store.getClient(clientId); if (c && c.plan) { c.plan.cuts = [...(c.plan.cuts || []), ...planCuts]; await store.saveClient(c); } }
+      if (planCuts.length) { const c = await store.getClient(found.owner.id); if (c && c.plan) { c.plan.cuts = [...(c.plan.cuts || []), ...planCuts]; await store.saveClient(c); } }
       return ok({ appointment, whatsapp: core.config.whatsapp }, 201);
     }
 

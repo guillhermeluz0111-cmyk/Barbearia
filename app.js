@@ -211,7 +211,8 @@ function reviewPlanBlock() {
   else if (!q.covered) { tone = 'warn'; message = `${q.limit === 1 ? 'Seu corte' : `Seus ${q.limit} cortes`} de ${month} ${q.limit === 1 ? 'já foi usado' : 'já foram usados'}. Será cobrado corte adicional: ${BRL.format(q.extraCharge)}.`; }
   else { tone = 'warn'; message = `${n(q.covered, 'corte incluso', 'cortes inclusos')} no plano e ${n(q.extra, 'adicional', 'adicionais')}: ${BRL.format(q.extraCharge)} a pagar.`; }
   return `<div class="rv-block rv-plan"><div class="rv-title"><small>Plano mensal · ${esc(q.planName)}</small></div>
-    ${q.dependents.length ? `<label class="rv-who">Quem vai cortar?<select id="rv-beneficiary"><option value="">Titular</option>${q.dependents.map(d => `<option value="${esc(d.id)}" ${state.beneficiary === d.id ? 'selected' : ''}>${esc(d.name)} (dependente)</option>`).join('')}</select></label>` : ''}
+    ${q.dependents.length && !q.locked ? `<label class="rv-who">Quem vai cortar?<select id="rv-beneficiary"><option value="">Titular</option>${q.dependents.map(d => `<option value="${esc(d.id)}" ${state.beneficiary === d.id ? 'selected' : ''}>${esc(d.name)} (dependente)</option>`).join('')}</select></label>` : ''}
+    ${q.locked && q.beneficiary ? `<p class="rv-plan-who">Corte de <b>${esc(q.beneficiary.name)}</b> (dependente do plano)</p>` : ''}
     <div class="rv-grid"><div><span>Usados no mês</span><b>${Math.min(q.usedBefore, q.limit)} de ${q.limit}</b></div><div><span>Disponíveis</span><b>${q.available}</b></div><div><span>Após este</span><b>${q.remainingAfter}</b></div></div>
     <p class="rv-plan-msg ${tone}">${message}</p></div>`;
 }
@@ -318,7 +319,7 @@ function scheduleLookup(delay = 350) {
         setHint(state.clientMode === 'new'
           ? `Este WhatsApp já tem cadastro, <b>${first}</b>! Entramos como cliente cadastrado.`
           : `Olá, <b>${first}</b>! Encontramos seu cadastro.`);
-        if (client.subscriber) setHint($('#phone-hint').innerHTML + ` Você é <b>assinante</b> do ${esc(client.planName)}: seus cortes do plano serão conferidos na revisão.`);
+        if (client.subscriber) setHint($('#phone-hint').innerHTML + (client.dependent ? ` Você é <b>dependente</b> do ${esc(client.planName)}: os cortes do plano serão conferidos na revisão.` : ` Você é <b>assinante</b> do ${esc(client.planName)}: seus cortes do plano serão conferidos na revisão.`));
         state.clientMode = 'existing';
       } else {
         clearAuto();
