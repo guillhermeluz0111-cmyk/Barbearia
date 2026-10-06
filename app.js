@@ -319,7 +319,7 @@ function scheduleLookup(delay = 350) {
         setHint(state.clientMode === 'new'
           ? `Este WhatsApp já tem cadastro, <b>${first}</b>! Entramos como cliente cadastrado.`
           : `Olá, <b>${first}</b>! Encontramos seu cadastro.`);
-        if (client.subscriber) setHint($('#phone-hint').innerHTML + (client.dependent ? ` Você é <b>dependente</b> do ${esc(client.planName)}: os cortes do plano serão conferidos na revisão.` : ` Você é <b>assinante</b> do ${esc(client.planName)}: seus cortes do plano serão conferidos na revisão.`));
+        if (client.subscriber) setHint($('#phone-hint').innerHTML + (client.dependent ? ` Você é <b>dependente</b> do ${esc(client.planName)}: os cortes do plano serão conferidos na revisão.` : ` Você é <b>assinante</b> do ${esc(client.planName)}: seus cortes do plano serão conferidos na revisão. <button type="button" class="link-btn" data-plan-history>Ver histórico de cortes do mês</button>`));
         state.clientMode = 'existing';
       } else {
         clearAuto();
@@ -364,6 +364,7 @@ function wirePublic() {
   $$('[data-scroll]').forEach(button => button.addEventListener('click', () => $('#booking').scrollIntoView({ behavior: 'smooth' })));
   $$('.dialog-close').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
   $('#ps-send').addEventListener('click', sendPlanSignup);
+  wirePlanHistory();
   wireClientStep();
 }
 
@@ -378,7 +379,7 @@ function appointmentCard(item) {
     : '<button class="mini-btn" data-action="remind">Lembrar</button><button class="mini-btn" data-action="attended">Compareceu</button><button class="mini-btn" data-action="reschedule">Reagendar</button><button class="mini-btn danger" data-action="no_show">Desistência</button>';
   return `<article class="appointment-card" data-appointment="${item.id}">
     <div class="appointment-head"><strong>${item.time} — ${esc(item.customerName)}</strong><span class="status-pill ${item.status}">${statusLabels[item.status] || item.status}</span></div>
-    <p>${esc(item.services.map(service => service.name).join(' + '))}${item.products && item.products.length ? ` <em class="prod-tag">+ ${esc(item.products.map(p => p.name).join(', '))}</em>` : ''}${item.planInfo ? ' <em class="plan-tag">Assinante</em>' : ''} · ${BRL.format(item.total)}</p>
+    <p>${esc(item.services.map(service => service.name).join(' + '))}${item.products && item.products.length ? ` <em class="prod-tag">+ ${esc(item.products.map(p => p.name).join(', '))}</em>` : ''}${item.planInfo ? ' <em class="plan-tag">Assinante</em>' : ''}${item.walkin ? ' <em class="plan-tag">Sem agendamento</em>' : ''} · ${BRL.format(item.total)}</p>
     <div class="appointment-details">
       <dl><div><dt>Telefone</dt><dd>${esc(item.phone)}</dd></div><div><dt>Duração</dt><dd>${minutesLabel(item.duration)}</dd></div><div><dt>Data</dt><dd>${dateFmt(item.date)}</dd></div><div><dt>Criado em</dt><dd>${new Date(item.createdAt).toLocaleDateString('pt-BR')}</dd></div>${item.planInfo ? `<div><dt>Plano</dt><dd>${esc(planSummary(item))}</dd></div>` : ''}</dl>
       <div class="action-row">${actions}</div>
@@ -419,7 +420,7 @@ function renderDashboard() {
 
 function renderAgenda() {
   const items = state.data.appointments.slice().sort((a, b) => `${b.date}${b.time}`.localeCompare(`${a.date}${a.time}`));
-  $('#admin-agenda').innerHTML = `<div class="panel-card"><div class="panel-header"><h3>HISTÓRICO DE AGENDAMENTOS</h3><p>${items.length} registros preservados</p></div>${items.length ? items.map(appointmentCard).join('') : '<div class="empty-admin">Nenhum agendamento.</div>'}</div>`;
+  $('#admin-agenda').innerHTML = `<div class="panel-card"><div class="panel-header"><div><h3>HISTÓRICO DE AGENDAMENTOS</h3><p>${items.length} registros preservados</p></div><button class="primary-btn small" id="walkin-add">Adicionar cliente <span>+</span></button></div>${items.length ? items.map(appointmentCard).join('') : '<div class="empty-admin">Nenhum agendamento.</div>'}</div>`;
   wireAppointmentCards($('#admin-agenda'));
 }
 
@@ -556,11 +557,45 @@ function renderPlanBox() {
       </div>
       <div class="plan-total"><span>Total por mês</span><strong>${BRL.format(total)}</strong></div>
       <button type="button" class="primary-btn full" id="plan-interest">Quero este plano <span>→</span></button>
+      <button type="button" class="link-btn plan-history-link" data-plan-history>Já sou assinante: ver histórico de cortes do mês</button>
     </div>`;
   $$('[data-plan-step]').forEach(button => button.addEventListener('click', () => {
     planPick[button.dataset.planStep] += Number(button.dataset.dir); renderPlanBox();
   }));
   $('#plan-interest').addEventListener('click', openPlanSignup);
+}
+
+/* ---------- Plano mensal: histórico de cortes do mês (cliente assinante) ---------- */
+function openPlanHistory(phone = '') {
+  const digits = String(phone || '').replace(/\D/g, '');
+  $('#ph-phone').value = digits ? phoneFmt(digits) : ''; $('#ph-result').innerHTML = '';
+  $('#plan-history-dialog').showModal();
+  if (phoneKey(digits).length >= 10) loadPlanHistory(); else $('#ph-phone').focus();
+}
+async function loadPlanHistory() {
+  const phone = $('#ph-phone').value.replace(/\D/g, ''); const box = $('#ph-result');
+  if (phoneKey(phone).length < 10) { box.innerHTML = '<p class="muted">Informe o WhatsApp com DDD.</p>'; return; }
+  box.innerHTML = '<p class="muted">Buscando…</p>';
+  try {
+    const h = await api(`/api/plan-history?phone=${encodeURIComponent(phone)}&month=${todayISO().slice(0, 7)}`);
+    if (!h.subscriber) { box.innerHTML = `<p class="muted">${h.dependent ? 'Este WhatsApp é de um dependente. O histórico do plano fica disponível para o titular.' : 'Não encontramos um plano mensal ativo para este WhatsApp.'}</p>`; return; }
+    const label = new Date(`${h.month}-01T12:00:00`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+    const weekday = date => new Date(`${date}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
+    box.innerHTML = `<div class="ph-head"><b>${esc(h.planName)}</b><span>${esc(label.charAt(0).toUpperCase() + label.slice(1))}</span></div>
+      <p class="ph-count"><strong>${h.used}</strong> de ${h.limit} ${h.limit === 1 ? 'corte usado' : 'cortes usados'} neste mês</p>
+      ${h.cuts.length ? `<div class="ph-list">${h.cuts.map(cut => `<div class="ph-line">
+        <div class="ph-when"><b>${dateFmt(cut.date)}</b><small>${esc(weekday(cut.date))}${cut.time ? ` · às ${esc(cut.time)}` : ' · registrado pela barbearia'}</small></div>
+        <span class="ph-who ${cut.dependentName ? 'dep' : 'own'}">${cut.dependentName ? `Dependente: ${esc(cut.dependentName)}` : 'Titular'}</span></div>`).join('')}</div>` : '<p class="muted">Nenhum corte realizado neste mês ainda.</p>'}`;
+  } catch (error) { box.innerHTML = '<p class="muted">Não foi possível consultar agora. Tente novamente.</p>'; }
+}
+function wirePlanHistory() {
+  document.addEventListener('click', event => {
+    if (!event.target.closest('[data-plan-history]')) return;
+    const inBooking = event.target.closest('#phone-hint');
+    openPlanHistory(inBooking ? phoneDigits() : '');
+  });
+  $('#ph-load').addEventListener('click', loadPlanHistory);
+  $('#ph-phone').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); loadPlanHistory(); } });
 }
 
 /* Apagar serviço ou produto do catálogo (agendamentos antigos mantêm o registro do que foi feito) */
@@ -719,12 +754,14 @@ function buildClients() {
     client.name = item.customerName; client.phone = item.phone; client.appts.push(item);
     map.set(key, client);
   });
+  registry.forEach(item => { if (item.manual && !map.has(item.id)) map.set(item.id, { key: item.id, appts: [], name: item.name, phone: item.phone }); }); // cadastrados pelo painel, ainda sem agendamento
+  const lastStamp = client => client.last ? stamp(client.last) : `${String(client.registeredAt || '').slice(0, 10)}${String(client.registeredAt || '').slice(11, 16)}`;
   return [...map.values()].map(client => {
     const attended = client.appts.filter(item => item.status === 'attended');
     const record = registry.get(phoneKey(client.phone));
-    const registeredAt = (record && record.firstBookingAt) || client.appts.map(item => item.createdAt).filter(Boolean).sort()[0] || '';
+    const registeredAt = (record && (record.registeredAt || record.firstBookingAt)) || client.appts.map(item => item.createdAt).filter(Boolean).sort()[0] || '';
     return { ...client, attended, registeredAt, lastCut: attended[attended.length - 1] || null, spent: attended.reduce((sum, item) => sum + item.total, 0), last: client.appts[client.appts.length - 1] };
-  }).sort((a, b) => stamp(b.last).localeCompare(stamp(a.last)));
+  }).sort((a, b) => lastStamp(b).localeCompare(lastStamp(a)));
 }
 
 function serviceStats(client) {
@@ -745,7 +782,7 @@ function renderClients() {
   const current = state.clientKey && clients.find(client => client.key === state.clientKey);
   if (current) return renderClientDetail(root, current);
   state.clientKey = null;
-  root.innerHTML = `<div class="panel-card"><div class="panel-header"><div><h3>LISTA DE CLIENTES</h3><p>${clients.length} ${clients.length === 1 ? 'cliente' : 'clientes'} · clique em um cliente para ver o histórico completo</p></div></div>
+  root.innerHTML = `<div class="panel-card"><div class="panel-header"><div><h3>LISTA DE CLIENTES</h3><p>${clients.length} ${clients.length === 1 ? 'cliente' : 'clientes'} · clique em um cliente para ver o histórico completo</p></div><button class="primary-btn small" id="client-add">Adicionar cliente <span>+</span></button></div>
     <div class="client-toolbar"><input id="client-search" type="search" placeholder="Buscar por nome ou telefone" value="${esc(state.clientQuery)}" autocomplete="off"></div>
     <div id="client-rows" class="client-list"></div></div>`;
   const draw = () => {
@@ -761,7 +798,7 @@ function renderClients() {
       </span>
       <span class="client-col hide-sm"><small>Atendimentos</small><b>${client.attended.length}<em>/${client.appts.length}</em></b></span>
       <span class="client-arrow">→</span>
-    </button>`).join('') : `<div class="empty-admin">${clients.length ? 'Nenhum cliente encontrado.' : 'Ainda não há clientes. Eles aparecem aqui após o primeiro agendamento.'}</div>`;
+    </button>`).join('') : `<div class="empty-admin">${clients.length ? 'Nenhum cliente encontrado.' : 'Ainda não há clientes. Use “Adicionar cliente” ou aguarde o primeiro agendamento.'}</div>`;
     $$('[data-client]', $('#client-rows')).forEach(button => button.addEventListener('click', () => openClient(button.dataset.client)));
   };
   $('#client-search').addEventListener('input', event => { state.clientQuery = event.target.value; draw(); });
@@ -1047,6 +1084,57 @@ function wirePlanDialogs() {
 }
 
 
+/* ---------- Painel: adicionar cliente (atendimento sem agendamento e cadastro simples) ---------- */
+const walkinDraft = { services: [] };
+function openWalkin() {
+  walkinDraft.services = []; $('#wk-name').value = ''; $('#wk-name').dataset.auto = ''; $('#wk-phone').value = '';
+  const services = state.data.services.filter(s => s.active && s.price !== null && s.price !== undefined && s.duration !== null && s.duration !== undefined);
+  $('#wk-services').innerHTML = services.length
+    ? services.map(s => `<button type="button" class="wk-chip" data-wk-service="${esc(s.id)}"><b>${esc(s.name)}</b><small>${BRL.format(s.price)}</small></button>`).join('')
+    : '<p class="muted">Cadastre um serviço na aba Serviços antes de registrar um atendimento.</p>';
+  $$('[data-wk-service]').forEach(button => button.addEventListener('click', () => {
+    button.classList.toggle('active'); walkinDraft.services = $$('[data-wk-service].active').map(item => item.dataset.wkService);
+  }));
+  $('#walkin-dialog').showModal(); $('#wk-name').focus();
+}
+async function saveWalkin() {
+  const button = $('#wk-save'); button.disabled = true;
+  try {
+    const { appointment } = await api('/api/walkins', { method: 'POST', body: JSON.stringify({ customerName: $('#wk-name').value, phone: $('#wk-phone').value, serviceIds: walkinDraft.services }) });
+    $('#walkin-dialog').close(); await reloadState(); renderAdmin();
+    toast(`Atendimento registrado: ${appointment.customerName} · ${appointment.time}`);
+  } catch (error) { toast(error.message); }
+  finally { button.disabled = false; }
+}
+function openNewClient() {
+  $('#ca-name').value = ''; $('#ca-phone').value = ''; $('#client-add-dialog').showModal(); $('#ca-name').focus();
+}
+async function saveNewClient() {
+  const button = $('#ca-save'); button.disabled = true;
+  try {
+    const { client } = await api('/api/clients', { method: 'POST', body: JSON.stringify({ name: $('#ca-name').value, phone: $('#ca-phone').value }) });
+    $('#client-add-dialog').close(); await reloadState(); renderAdmin();
+    toast(`Cliente cadastrado: ${client.name}`);
+  } catch (error) { toast(error.message); }
+  finally { button.disabled = false; }
+}
+function wireClientAdd() {
+  $('#admin-view').addEventListener('click', event => {
+    if (event.target.closest('#walkin-add')) openWalkin();
+    else if (event.target.closest('#client-add')) openNewClient();
+  });
+  $('#wk-phone').addEventListener('input', () => {
+    formatPhoneInput($('#wk-phone')); const name = $('#wk-name');
+    const known = (state.data.clients || []).find(item => item.id === phoneKey($('#wk-phone').value));
+    if (known && known.name && (!name.value.trim() || name.dataset.auto === '1')) { name.value = known.name; name.dataset.auto = '1'; }
+  });
+  $('#wk-name').addEventListener('input', () => { $('#wk-name').dataset.auto = ''; });
+  $('#ca-phone').addEventListener('input', () => formatPhoneInput($('#ca-phone')));
+  $('#wk-save').addEventListener('click', saveWalkin);
+  $('#ca-save').addEventListener('click', saveNewClient);
+  ['#ca-name', '#ca-phone'].forEach(selector => $(selector).addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); saveNewClient(); } }));
+}
+
 /* ---------- Informações públicas (horários, aberto agora, menu) ---------- */
 const DAY_SHORT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 function hoursGroups() {
@@ -1221,6 +1309,7 @@ async function init() {
       $('#reset-confirm').addEventListener('input', event => { $('#reset-run').disabled = event.target.value.trim().toUpperCase() !== 'ZERAR'; });
       $('#reset-run').addEventListener('click', runReset);
       wirePlanDialogs();
+      wireClientAdd();
       $$('[data-item-type]').forEach(button => button.addEventListener('click', () => setItemType(button.dataset.itemType)));
       $('#item-save').addEventListener('click', saveNewItem);
       window.addEventListener('hashchange', syncClientHash); syncClientHash();

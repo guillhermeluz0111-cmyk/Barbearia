@@ -294,6 +294,15 @@
     <p class="bk-hint">Ao enviar, seu pedido fica registrado e abrimos o WhatsApp para confirmar a assinatura e combinar o pagamento. O plano é ativado depois da confirmação do pagamento.</p>
     <button id="ps-send" class="primary-btn full">Enviar pelo WhatsApp <span>↗</span></button>
   </dialog>
+  <dialog id="plan-history-dialog" class="app-dialog tall-dialog">
+    <button class="dialog-close" aria-label="Fechar">×</button>
+    <p class="eyebrow"><span></span> Plano mensal</p><h3>HISTÓRICO DE CORTES</h3>
+    <div class="ph-search">
+      <label class="reset-label">WhatsApp do titular<input id="ph-phone" inputmode="tel" autocomplete="tel" placeholder="(00) 00000-0000"></label>
+      <button type="button" class="primary-btn" id="ph-load">Ver <span>→</span></button>
+    </div>
+    <div id="ph-result" aria-live="polite"></div>
+  </dialog>
   <div id="toast" class="toast" role="status"></div>
   <script src="store.js"></script>
   <script src="app.js" defer></script>

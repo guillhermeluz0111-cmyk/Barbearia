@@ -399,6 +399,70 @@
       return ok(q);
     }
 
+    /* Histórico de cortes do mês do assinante (titular): data, horário agendado e quem fez o corte (titular ou dependente). */
+    if (method === 'GET' && url.pathname === '/api/plan-history') {
+      const key = phoneKey(url.searchParams.get('phone'));
+      if (key.length < 10) return ok({ subscriber: false });
+      const found = await findPlanByPhone(store, key);
+      if (found.dependent) return ok({ subscriber: false, dependent: true }); // o histórico do plano é do titular
+      if (!found.owner) return ok({ subscriber: false });
+      const plan = found.owner.plan; const asked = String(url.searchParams.get('month') || ''); const now = new Date();
+      const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(asked) ? asked : `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const cuts = (plan.cuts || []).filter(c => String(c.date).slice(0, 7) === month)
+        .sort((a, b) => `${a.date} ${a.time || ''}`.localeCompare(`${b.date} ${b.time || ''}`))
+        .map(c => ({ id: c.id, date: c.date, time: c.time || null, dependentName: c.dependentName || null, serviceName: c.serviceName || null }));
+      return ok({ subscriber: true, planName: plan.planName || 'Plano mensal', month, limit: plan.cutsPerMonth || 0, used: cuts.length, cuts });
+    }
+
+    /* Painel: cliente que está na barbearia sem ter agendado pelo site. Vira um atendimento de hoje, no horário atual
+       (se for assinante ou dependente, o corte do plano é conferido e registrado como nos agendamentos do site). */
+    if (method === 'POST' && url.pathname === '/api/walkins') {
+      const customerName = String(body.customerName || '').trim().slice(0, 80);
+      const phone = String(body.phone || '').replace(/\D/g, '').slice(0, 15);
+      if (customerName.length < 2) return fail(422, 'Informe o nome do cliente.');
+      if (phone.length < 10) return fail(422, 'Informe um WhatsApp válido com DDD.');
+      const core = await getCore(store, true);
+      const totals = bookingTotals(core, body.serviceIds);
+      if (!totals.services.length) return fail(422, 'Selecione o serviço que será realizado.');
+      const now = new Date(); const date = dateISO(now); const time = `${pad(now.getHours())}:${pad(now.getMinutes())}`; const nowIso = now.toISOString();
+      const clientId = phoneKey(phone); const apptId = uuid();
+      const found = await findPlanByPhone(store, clientId);
+      const q = buildQuote(found.owner, normalizePlan(core.config && core.config.monthlyPlan), core, { serviceIds: totals.services.map(x => x.id), productIds: [], date, beneficiaryId: '' }, found.dependent);
+      if (q && q.error) return fail(422, q.error);
+      const planCuts = q ? q.lines.filter(l => l.eligible).map(l => ({ id: uuid(), date, time, dependentId: q.beneficiary ? q.beneficiary.id : null, dependentName: q.beneficiary ? q.beneficiary.name : null,
+        createdAt: nowIso, appointmentId: apptId, serviceName: l.name, kind: l.covered ? 'included' : 'extra', charge: l.charge, source: 'walkin' })) : [];
+      const appointment = {
+        id: apptId, clientId, customerName, phone, date, time, walkin: true,
+        serviceIds: totals.services.map(sv => sv.id),
+        services: totals.services.map(({ id, name, price, duration, cost }) => {
+          const l = q && q.lines.find(x => x.id === id);
+          return { id, name, price, duration, cost: cost ?? null, ...(l ? { planCovered: l.covered, charge: l.charge } : {}) };
+        }),
+        productIds: [], products: [], total: q ? q.total : totals.total, duration: totals.duration, status: 'attended', createdAt: nowIso, history: []
+      };
+      if (q) {
+        appointment.planInfo = { planName: q.planName, limit: q.limit, usedBefore: q.usedBefore, usedAfter: q.usedAfter, remainingAfter: q.remainingAfter, eligible: q.eligible, covered: q.covered, extra: q.extra,
+          extraCharge: q.extraCharge, listTotal: totals.total, beneficiaryName: q.beneficiary ? q.beneficiary.name : null, text: q.text };
+        appointment.planCuts = planCuts; appointment.planOwnerId = found.owner.id;
+      }
+      await store.createAppointment(appointment);
+      if (planCuts.length) { const c = await store.getClient(found.owner.id); if (c && c.plan) { c.plan.cuts = [...(c.plan.cuts || []), ...planCuts]; await store.saveClient(c); } }
+      return ok({ appointment }, 201);
+    }
+
+    /* Painel: cadastro simples de cliente (nome e WhatsApp) para agendamentos futuros. */
+    if (method === 'POST' && url.pathname === '/api/clients') {
+      const name = String(body.name || '').trim().slice(0, 80);
+      const phone = String(body.phone || '').replace(/\D/g, '').slice(0, 15);
+      if (name.length < 2) return fail(422, 'Informe o nome do cliente.');
+      if (phone.length < 10) return fail(422, 'Informe um WhatsApp válido com DDD.');
+      const key = phoneKey(phone); const existing = await store.getClient(key);
+      if (existing) return fail(409, `Este WhatsApp já está cadastrado${existing.name ? ` (${existing.name})` : ''}.`);
+      const client = { id: key, name, phone, manual: true, registeredAt: new Date().toISOString() };
+      await store.saveClient(client);
+      return ok({ client }, 201);
+    }
+
     if (method === 'GET' && url.pathname === '/api/sync') return ok({ version: await store.version() });
 
     if (method === 'GET' && url.pathname === '/api/availability') {
