@@ -532,8 +532,8 @@ function updatePlanPreview() {
   const f = readPlanForm(); const min = Math.max(1, Number(f.includedCuts) || 1);
   const fixed = planRowsDraft.filter(r => r.fixed); const perVisit = fixed.reduce((n, r) => n + (Number(r.price) || 0), 0);
   $('#pc-preview').innerHTML = perVisit > 0
-    ? `Exemplo: <b>${min} ${min === 1 ? 'visita' : 'visitas'}/mês</b> com ${fixed.map(r => esc(r.name)).join(' + ')} (<b>${BRL.format(perVisit)}</b> por visita) = <b>${BRL.format(perVisit * min)}</b>/mês`
-    : 'Defina o preço de mensalista de Corte, Barba e Sobrancelha para o plano aparecer no site.';
+    ? `Exemplo: <b>${min} ${min === 1 ? 'visita' : 'visitas'}/mês</b> com ${fixed.map(r => esc(r.name)).join(' + ')} (<b>${BRL.format(perVisit)}</b> por visita) = <b>${BRL.format(perVisit * min)}</b>/mês${f.enabled ? '' : ' · <b style="color:#c0392b">Plano oculto: ligue “Mostrar plano no site” e salve.</b>'}`
+    : '<b style="color:#c0392b">O plano só aparece no site depois que você preencher o preço de mensalista de Corte, Barba e/ou Sobrancelha (coluna “Preço mensalista”) e clicar em “Salvar plano”.</b>';
 }
 function drawPlanConfig() {
   const form = readPlanForm(); const typed = $('#pc-add-price') ? $('#pc-add-price').value : '';
@@ -544,7 +544,7 @@ function wirePlanConfig(root) {
   const card = $('#plan-config', root); if (!card) return; updatePlanPreview();
   const rowOf = element => planRowsDraft.find(r => r.id === element.closest('tr').dataset.prow);
   card.addEventListener('click', async event => {
-    if (event.target.closest('#pc-enabled')) return $('#pc-enabled').classList.toggle('on');
+    if (event.target.closest('#pc-enabled')) { $('#pc-enabled').classList.toggle('on'); return updatePlanPreview(); }
     const remove = event.target.closest('[data-prow-remove]');
     if (remove) { planRowsDraft = planRowsDraft.filter(r => r.id !== remove.closest('tr').dataset.prow); return drawPlanConfig(); }
     if (event.target.closest('#pc-add-btn')) {
@@ -561,7 +561,9 @@ function wirePlanConfig(root) {
         toast(`Informe o preço de mensalista de ${missing.name}.`); if (input) { input.classList.add('need-price'); input.focus(); } return;
       }
       save.disabled = true;
-      try { await api('/api/plan-config', { method: 'PUT', body: JSON.stringify(readPlanForm()) }); await reloadState(); renderServiceAdmin(); toast('Plano mensal salvo.'); }
+      try { await api('/api/plan-config', { method: 'PUT', body: JSON.stringify(readPlanForm()) }); const saved = readPlanForm(); await reloadState(); renderServiceAdmin();
+        const fixedOk = saved.services.some(r => r.fixed && Number(r.price) > 0);
+        toast(saved.enabled && !fixedOk ? 'Plano salvo, mas ainda NÃO aparece no site: defina o preço de mensalista de Corte, Barba ou Sobrancelha.' : saved.enabled ? 'Plano mensal salvo e visível no site.' : 'Plano salvo (oculto no site: ligue “Mostrar plano no site”).'); }
       catch (error) { toast(error.message); save.disabled = false; }
     }
   });
