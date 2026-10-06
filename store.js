@@ -292,16 +292,19 @@
   const normalizePlanServices = list => {
     const saved = Array.isArray(list) ? list : [];
     const fixed = FIXED_PLAN_SERVICES.map(f => { const o = saved.find(x => x && x.id === f.id) || {};
-      return { id: f.id, name: f.name, fixed: true, price: planNum(o.price, null), serviceId: o.serviceId ? String(o.serviceId).slice(0, 80) : null }; });
+      return { id: f.id, name: String(o.name || f.name).trim().slice(0, 80) || f.name, fixed: true, price: planNum(o.price, null), serviceId: o.serviceId ? String(o.serviceId).slice(0, 80) : null }; });
     const seen = new Set(fixed.map(x => x.id));
     const extra = saved.filter(x => x && !String(x.id || '').startsWith('fixed-')).map(x => ({ id: String(x.id || uuid()).slice(0, 80), name: String(x.name || '').trim().slice(0, 80), fixed: false,
       price: planNum(x.price, null), serviceId: x.serviceId ? String(x.serviceId).slice(0, 80) : null })).filter(x => x.name && !seen.has(x.id) && seen.add(x.id));
     return [...fixed, ...extra].slice(0, 40);
   };
-  const normalizePlan = p => { const o = p || {}; return {
-    enabled: Boolean(o.enabled), name: String(o.name || PLAN_DEFAULTS.name).slice(0, 60), description: String(o.description || '').slice(0, 200),
-    monthlyValue: planNum(o.monthlyValue, 0), includedCuts: Math.max(1, planInt(o.includedCuts, PLAN_DEFAULTS.includedCuts)),
-    extraCutValue: planNum(o.extraCutValue, 0), dependentValue: planNum(o.dependentValue, 0), maxDependents: planInt(o.maxDependents, PLAN_DEFAULTS.maxDependents), services: normalizePlanServices(o.services) }; };
+  /* Valor total do plano no mês = preço dos serviços fixos para as visitas mínimas (definido pelo dono).
+     Planos antigos (preço por serviço fixo) são convertidos: soma dos fixos x visitas mínimas. */
+  const normalizePlan = p => { const o = p || {}; const services = normalizePlanServices(o.services); const includedCuts = Math.max(1, planInt(o.includedCuts, PLAN_DEFAULTS.includedCuts));
+    let monthlyValue = planNum(o.monthlyValue, 0);
+    if (!(monthlyValue > 0)) { const legacy = money(services.filter(r => r.fixed).reduce((n, r) => n + (r.price || 0), 0) * includedCuts); if (legacy > 0) monthlyValue = legacy; }
+    return { enabled: Boolean(o.enabled), name: String(o.name || PLAN_DEFAULTS.name).slice(0, 60), description: String(o.description || '').slice(0, 200),
+      monthlyValue, includedCuts, extraCutValue: planNum(o.extraCutValue, 0), dependentValue: planNum(o.dependentValue, 0), maxDependents: planInt(o.maxDependents, PLAN_DEFAULTS.maxDependents), services }; };
 
   const planRowSnapshot = r => ({ id: r.id, name: r.name, price: r.price, fixed: Boolean(r.fixed), serviceId: r.serviceId || null });
   /* O serviço do catálogo é coberto por uma linha da Tabela 2: pelo vínculo escolhido ou, nas fixas sem vínculo, pelo nome. */
@@ -314,7 +317,8 @@
   function planVisit(cfg, extraIds) {
     const wanted = new Set(Array.isArray(extraIds) ? extraIds.map(String) : []);
     const rows = cfg.services.filter(r => r.fixed || (wanted.has(r.id) && r.price > 0));
-    return { rows, perVisit: money(rows.reduce((n, r) => n + (r.price || 0), 0)) };
+    const extrasPerVisit = money(rows.filter(r => !r.fixed).reduce((n, r) => n + (r.price || 0), 0));
+    return { rows, extrasPerVisit, perVisit: money(cfg.monthlyValue / cfg.includedCuts + extrasPerVisit) };
   }
   /* Cortes que o agendamento gasta do plano: planos novos gastam 1 visita por agendamento; planos antigos, 1 corte por serviço. */
   function buildPlanCuts(q, { date, time, apptId, nowIso, source }) {
@@ -633,6 +637,7 @@
       const err = strict(body.includedCuts, 'a quantidade mínima de visitas') || strict(body.dependentValue, 'o valor adicional por dependente') || strict(body.maxDependents, 'o máximo de dependentes');
       if (err) return fail(422, err);
       if (Number(body.includedCuts) < 1) return fail(422, 'A quantidade mínima de visitas deve ser pelo menos 1.');
+      if (plan.enabled && !(plan.monthlyValue > 0)) return fail(422, 'Informe o valor total do plano no mês para mostrar o plano no site.');
       if (!String(body.name || '').trim()) return fail(422, 'Informe o nome do plano.');
       plan.name = String(body.name).trim().slice(0, 60);
       await store.saveMonthlyPlan(plan); bust();
@@ -670,7 +675,7 @@
       const core = await getCore(store, true);
       const cfg = normalizePlan(core.config && core.config.monthlyPlan);
       const visit = planVisit(cfg, body.serviceIds);
-      if (!cfg.enabled || visit.perVisit <= 0) return fail(422, 'O plano mensal não está disponível no momento.');
+      if (!cfg.enabled || !(cfg.monthlyValue > 0)) return fail(422, 'O plano mensal não está disponível no momento.');
       const name = String(body.name || '').trim().slice(0, 80);
       const phone = String(body.phone || '').replace(/\D/g, '').slice(0, 15); const key = phoneKey(phone);
       if (name.length < 2) return fail(422, 'Informe o nome completo.');
@@ -682,11 +687,12 @@
       if (rawDeps.some(d => String(d.name || '').trim().length < 2)) return fail(422, 'Informe o nome de cada dependente.');
       const dependents = rawDeps.map(d => ({ id: uuid(), name: String(d.name).trim().slice(0, 80), phone: String(d.phone || '').replace(/\D/g, '').slice(0, 15) }));
       if (dependents.some(d => d.phone && d.phone.length < 10)) return fail(422, 'Informe um WhatsApp válido com DDD para o dependente (ou deixe em branco).');
-      const planValue = money(cuts * visit.perVisit + dependents.length * cfg.dependentValue); // visitas x serviços da Tabela 2 + dependentes
+      const baseValue = money(cfg.monthlyValue * cuts / cfg.includedCuts); // valor do plano (visitas mínimas) proporcional às visitas escolhidas
+      const planValue = money(baseValue + money(visit.extrasPerVisit * cuts) + dependents.length * cfg.dependentValue); // + serviços extras x visitas + dependentes
       const old = await store.getClient(key); const prev = old && old.plan; const now = new Date().toISOString();
       if (prev && prev.status !== 'pending_payment' && prev.active !== false) return fail(409, 'Este WhatsApp já possui um plano mensal ativo. Fale com a barbearia pelo WhatsApp para alterar.');
       const client = { ...(old || {}), id: key, name: (old && old.name) || name, phone, firstBookingAt: (old && old.firstBookingAt) || now, lastBookingAt: (old && old.lastBookingAt) || null,
-        plan: { ...(prev || {}), active: false, status: 'pending_payment', source: 'site', planName: cfg.name, monthlyValue: planValue, baseValue: money(cuts * visit.perVisit), planValue, perVisitValue: visit.perVisit, services: visit.rows.map(planRowSnapshot), cutsPerMonth: cuts, includedCuts: cfg.includedCuts,
+        plan: { ...(prev || {}), active: false, status: 'pending_payment', source: 'site', planName: cfg.name, monthlyValue: planValue, baseValue, planValue, perVisitValue: visit.perVisit, services: visit.rows.map(planRowSnapshot), cutsPerMonth: cuts, includedCuts: cfg.includedCuts,
           extraCutValue: cfg.extraCutValue, dependentValue: cfg.dependentValue, dependentsAllowed: dependents.length, dependents, cuts: (prev && prev.cuts) || [],
           startedAt: (prev && prev.startedAt) || null, requestedAt: now, updatedAt: now } };
       await store.saveClient(client);

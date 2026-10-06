@@ -997,3 +997,14 @@ button.plan-svc:hover{border-color:var(--orange)}
 .plan-svc b{font-size:13px;flex:none}
 .plan-svc.fixed i,.plan-svc.on i{background:var(--orange);color:#fff}
 .plan-svc.on{border-color:var(--orange);background:#fff7f2}
+
+/* Plano mensal: configuração simplificada */
+.pc-step{margin:20px 0 10px;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+.pc-step b{display:inline-grid;place-items:center;width:20px;height:20px;margin-right:6px;background:var(--orange);color:#fff;font-size:11px;border-radius:50%}
+.pc-step small{text-transform:none;letter-spacing:0;font-weight:500;color:#716a62}
+.pc-fixed{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.pc-fixed select{width:100%;padding:12px 8px;border:1px solid #c8c0b5;background:#fffdf8;color:var(--ink);font:inherit;font-size:13px}
+.pc-total-field small{display:block;margin-top:4px;color:#716a62;font-weight:500;font-size:11px}
+.pc-empty{margin:0 0 6px}
+.plan-svc b small{font-weight:500;font-size:10px;margin-left:2px}
+@media(max-width:700px){.pc-fixed{grid-template-columns:1fr}}

@@ -486,54 +486,62 @@ function renderServiceAdmin() {
 const FIXED_RX = { 'fixed-corte': /corte|cabelo/i, 'fixed-barba': /barba/i, 'fixed-sobrancelha': /sobrancelha/i };
 const planOf = () => { const p = (state.data.config && state.data.config.monthlyPlan) || {};
   return { enabled: false, name: 'Plano Mensal', description: '', monthlyValue: 0, includedCuts: 4, extraCutValue: 0, dependentValue: 0, maxDependents: 3, ...p, services: p.services || [] }; };
-/* Valor de cada visita = serviços fixos + serviços que o cliente adicionou, todos com o preço de mensalista da Tabela 2 */
-const planPerVisit = (plan, extras = []) => plan.services.filter(r => r.fixed || extras.includes(r.id)).reduce((n, r) => n + (Number(r.price) || 0), 0);
-const planTotal = (plan, deps, cuts, extras = []) => planPerVisit(plan, extras) * cuts + deps * plan.dependentValue;
+/* Total do mês = valor do plano (definido pelo dono para as visitas mínimas, proporcional às visitas escolhidas)
+   + serviços extras (preço x visitas) + dependentes. */
+const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
+const planExtrasPerVisit = (plan, extras = []) => plan.services.filter(r => !r.fixed && extras.includes(r.id)).reduce((n, r) => n + (Number(r.price) || 0), 0);
+const planBaseCost = (plan, cuts) => round2((Number(plan.monthlyValue) || 0) * cuts / Math.max(1, plan.includedCuts));
+const planTotal = (plan, deps, cuts, extras = []) => round2(planBaseCost(plan, cuts) + round2(planExtrasPerVisit(plan, extras) * cuts) + deps * plan.dependentValue);
 
 let planRowsDraft = [];
 const serviceAutoMatch = row => (row.fixed && FIXED_RX[row.id]) ? state.data.services.find(s => FIXED_RX[row.id].test(s.name)) : null;
 const linkedService = row => row.serviceId ? state.data.services.find(s => s.id === row.serviceId) : serviceAutoMatch(row);
+const FIXED_DEFAULT_NAME = { 'fixed-corte': 'Corte', 'fixed-barba': 'Barba', 'fixed-sobrancelha': 'Sobrancelha' };
 function planConfigHTML(p) {
   const services = state.data.services;
-  const taken = new Set();
-  planRowsDraft.forEach(r => { if (r.serviceId) taken.add(r.serviceId); else if (r.fixed && FIXED_RX[r.id]) services.forEach(s => { if (FIXED_RX[r.id].test(s.name)) taken.add(s.id); }); });
+  const taken = new Set(planRowsDraft.filter(r => r.serviceId).map(r => r.serviceId));
   const free = services.filter(s => !taken.has(s.id));
-  const rowHTML = row => {
-    const linked = linkedService(row); const auto = serviceAutoMatch(row);
-    return `<tr data-prow="${esc(row.id)}"><td><b>${esc(row.name)}</b>${row.fixed ? ' <em class="fixed-tag">Fixo</em>' : ''}</td>
-      <td><input data-pfield="price" type="number" min="0" step="0.01" inputmode="decimal" value="${row.price ?? ''}" placeholder="A definir"></td>
-      <td>${linked && linked.price !== null && linked.price !== undefined ? BRL.format(linked.price) : '—'}</td>
-      <td>${row.fixed ? `<select data-pfield="serviceId" aria-label="Serviço do catálogo"><option value="">Automático${auto ? ` (${esc(auto.name)})` : ' — nenhum serviço com esse nome'}</option>${services.map(s => `<option value="${esc(s.id)}" ${row.serviceId === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select>` : `<small class="muted">${linked ? esc(linked.name) : 'Serviço apagado do catálogo'}</small>`}</td>
-      <td class="row-actions">${row.fixed ? '' : '<button type="button" class="mini-btn danger" data-prow-remove>Remover</button>'}</td></tr>`;
-  };
-  return `<div class="panel-header"><div><h3>CATÁLOGO DE SERVIÇOS DOS MENSALISTAS</h3><p>Preços que o cliente vê ao montar o plano no site · Corte, Barba e Sobrancelha são fixos em todo plano e os demais serviços o cliente adiciona</p></div>
+  const label = s => `${esc(s.name)}${s.price !== null && s.price !== undefined ? ` — ${BRL.format(s.price)}` : ''}`;
+  const fixedHTML = planRowsDraft.filter(r => r.fixed).map((row, i) => `<label class="reset-label" data-prow="${esc(row.id)}">Serviço fixo ${i + 1}<select data-pfield="serviceId" aria-label="Serviço fixo ${i + 1}"><option value="">Selecione o serviço…</option>${services.map(s => `<option value="${esc(s.id)}" ${row.serviceId === s.id ? 'selected' : ''}>${label(s)}</option>`).join('')}</select></label>`).join('');
+  const extras = planRowsDraft.filter(r => !r.fixed);
+  const extraHTML = extras.length ? `<table class="data-table plan-svc-table"><thead><tr><th>Serviço extra</th><th>Preço mensalista por visita (R$)</th><th>Preço normal</th><th></th></tr></thead><tbody>${extras.map(row => { const linked = linkedService(row);
+    return `<tr data-prow="${esc(row.id)}"><td><b>${esc(row.name)}</b></td><td><input data-pfield="price" type="number" min="0.01" step="0.01" inputmode="decimal" value="${row.price ?? ''}" placeholder="Informe o valor"></td><td>${linked && linked.price !== null && linked.price !== undefined ? BRL.format(linked.price) : '—'}</td><td class="row-actions"><button type="button" class="mini-btn danger" data-prow-remove>Remover</button></td></tr>`; }).join('')}</tbody></table>`
+    : '<p class="muted pc-empty">Nenhum serviço extra adicionado ainda.</p>';
+  return `<div class="panel-header"><div><h3>PLANO MENSAL</h3><p>Defina o valor do plano para as visitas mínimas · o site mostra os serviços fixos e o total do mês, e soma o que o cliente adicionar</p></div>
       <label class="pc-switch"><span>Mostrar plano no site</span><button type="button" class="toggle ${p.enabled ? 'on' : ''}" id="pc-enabled" aria-label="Mostrar plano no site"></button></label></div>
+    <p class="pc-step"><b>1</b> Dados do plano</p>
     <div class="pc-grid">
       <label class="reset-label">Nome do plano<input id="pc-name" autocomplete="off" maxlength="60" value="${esc(p.name)}" placeholder="Plano Mensal"></label>
       <label class="reset-label">Visitas mínimas por mês<input id="pc-cuts" type="number" min="1" step="1" inputmode="numeric" value="${p.includedCuts}" placeholder="4"></label>
-      <label class="reset-label">Valor adicional por dependente (R$)<input id="pc-dep" type="number" min="0" step="0.01" inputmode="decimal" value="${p.dependentValue || ''}" placeholder="0,00"></label>
+      <label class="reset-label pc-total-field">Valor total do plano no mês (R$)<input id="pc-total" type="number" min="0" step="0.01" inputmode="decimal" value="${p.monthlyValue || ''}" placeholder="Ex.: 150,00"><small>Vale para as visitas mínimas, com os 3 serviços fixos em cada visita.</small></label>
+      <label class="reset-label">Valor adicional por dependente (R$/mês)<input id="pc-dep" type="number" min="0" step="0.01" inputmode="decimal" value="${p.dependentValue || ''}" placeholder="0,00"></label>
       <label class="reset-label">Máximo de dependentes<input id="pc-maxdep" type="number" min="0" step="1" inputmode="numeric" value="${p.maxDependents}" placeholder="3"></label>
       <label class="reset-label pc-wide">Descrição (opcional)<input id="pc-desc" autocomplete="off" maxlength="200" value="${esc(p.description)}" placeholder="Ex.: Atendimento prioritário, desconto em produtos…"></label>
     </div>
-    <table class="data-table plan-svc-table"><thead><tr><th>Serviço</th><th>Preço mensalista (R$)</th><th>Preço normal</th><th>Serviço do catálogo</th><th></th></tr></thead><tbody>${planRowsDraft.map(rowHTML).join('')}</tbody></table>
-    <div class="pc-add"><select id="pc-add-service" aria-label="Serviço para adicionar">${free.length ? free.map(s => `<option value="${esc(s.id)}">${esc(s.name)}${s.price !== null && s.price !== undefined ? ` — preço normal ${BRL.format(s.price)}` : ''}</option>`).join('') : '<option value="">Todos os serviços do catálogo já estão na tabela</option>'}</select><input id="pc-add-price" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="Preço mensalista (R$)" aria-label="Preço de mensalista do serviço" ${free.length ? '' : 'disabled'}><button type="button" class="mini-btn confirm" id="pc-add-btn" ${free.length ? '' : 'disabled'}>Adicionar à tabela</button></div>
+    <p class="pc-step"><b>2</b> Serviços fixos <small>— inclusos em toda visita do plano</small></p>
+    <div class="pc-fixed">${fixedHTML}</div>
+    <p class="pc-step"><b>3</b> Serviços extras <small>— o cliente pode adicionar ao plano; o valor é somado em cada visita</small></p>
+    ${extraHTML}
+    <div class="pc-add"><select id="pc-add-service" aria-label="Serviço para adicionar">${free.length ? free.map(s => `<option value="${esc(s.id)}">${label(s)}</option>`).join('') : '<option value="">Todos os serviços do catálogo já estão no plano</option>'}</select><input id="pc-add-price" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="Preço mensalista (R$)" aria-label="Preço de mensalista do serviço" ${free.length ? '' : 'disabled'}><button type="button" class="mini-btn confirm" id="pc-add-btn" ${free.length ? '' : 'disabled'}>Adicionar como extra</button></div>
     <p class="pc-preview" id="pc-preview"></p>
     <button class="primary-btn small" id="pc-save">Salvar plano</button>`;
 }
 function planConfigCard() {
   const p = planOf(); planRowsDraft = p.services.map(row => ({ ...row }));
+  planRowsDraft.forEach(row => { if (row.fixed && !row.serviceId) { const auto = serviceAutoMatch(row); if (auto) { row.serviceId = auto.id; row.name = auto.name; } } });
   return `<div class="panel-card plan-config" id="plan-config">${planConfigHTML(p)}</div>`;
 }
 function readPlanForm() {
-  return { enabled: $('#pc-enabled').classList.contains('on'), name: $('#pc-name').value, description: $('#pc-desc').value, includedCuts: $('#pc-cuts').value,
-    dependentValue: $('#pc-dep').value, maxDependents: $('#pc-maxdep').value, services: planRowsDraft.map(r => ({ id: r.id, name: r.name, price: r.price, serviceId: r.serviceId || null })) };
+  return { enabled: $('#pc-enabled').classList.contains('on'), name: $('#pc-name').value, description: $('#pc-desc').value, includedCuts: $('#pc-cuts').value, monthlyValue: $('#pc-total').value,
+    dependentValue: $('#pc-dep').value, maxDependents: $('#pc-maxdep').value, services: planRowsDraft.map(r => ({ id: r.id, name: r.name, price: r.fixed ? null : r.price, serviceId: r.serviceId || null })) };
 }
 function updatePlanPreview() {
-  const f = readPlanForm(); const min = Math.max(1, Number(f.includedCuts) || 1);
-  const fixed = planRowsDraft.filter(r => r.fixed); const perVisit = fixed.reduce((n, r) => n + (Number(r.price) || 0), 0);
-  $('#pc-preview').innerHTML = perVisit > 0
-    ? `Exemplo: <b>${min} ${min === 1 ? 'visita' : 'visitas'}/mês</b> com ${fixed.map(r => esc(r.name)).join(' + ')} (<b>${BRL.format(perVisit)}</b> por visita) = <b>${BRL.format(perVisit * min)}</b>/mês${f.enabled ? '' : ' · <b style="color:#c0392b">Plano oculto: ligue “Mostrar plano no site” e salve.</b>'}`
-    : '<b style="color:#c0392b">O plano só aparece no site depois que você preencher o preço de mensalista de Corte, Barba e/ou Sobrancelha (coluna “Preço mensalista”) e clicar em “Salvar plano”.</b>';
+  const f = readPlanForm(); const min = Math.max(1, Number(f.includedCuts) || 1); const total = Number(f.monthlyValue) || 0; const dep = Number(f.dependentValue) || 0;
+  const names = planRowsDraft.filter(r => r.fixed && r.serviceId).map(r => esc(r.name)).join(' + ');
+  const warn = text => `<b style="color:#c0392b">${text}</b>`;
+  $('#pc-preview').innerHTML = total > 0
+    ? `No site: <b>${min} ${min === 1 ? 'visita' : 'visitas'}/mês</b>${names ? ` com ${names}` : ''} = <b>${BRL.format(total)}</b>/mês. Cada serviço extra soma o preço dele × as visitas${dep > 0 ? ` e cada dependente soma ${BRL.format(dep)}` : ''}.${f.enabled ? '' : ' ' + warn('Plano oculto: ligue “Mostrar plano no site” e salve.')}`
+    : warn('Informe o “Valor total do plano no mês” para o plano aparecer no site.');
 }
 function drawPlanConfig() {
   const form = readPlanForm(); const typed = $('#pc-add-price') ? $('#pc-add-price').value : '';
@@ -542,7 +550,7 @@ function drawPlanConfig() {
 }
 function wirePlanConfig(root) {
   const card = $('#plan-config', root); if (!card) return; updatePlanPreview();
-  const rowOf = element => planRowsDraft.find(r => r.id === element.closest('tr').dataset.prow);
+  const rowOf = element => planRowsDraft.find(r => r.id === element.closest('[data-prow]').dataset.prow);
   card.addEventListener('click', async event => {
     if (event.target.closest('#pc-enabled')) { $('#pc-enabled').classList.toggle('on'); return updatePlanPreview(); }
     const remove = event.target.closest('[data-prow-remove]');
@@ -555,15 +563,18 @@ function wirePlanConfig(root) {
     }
     const save = event.target.closest('#pc-save');
     if (save) {
+      const fail = (text, input) => { toast(text); if (input) { input.classList.add('need-price'); input.focus(); } };
+      const fixedRows = planRowsDraft.filter(r => r.fixed);
+      const noSvc = fixedRows.findIndex(r => !r.serviceId);
+      if (noSvc >= 0) return fail(`Selecione o serviço fixo ${noSvc + 1}.`, $(`[data-prow="${fixedRows[noSvc].id}"] select`, card));
+      const used = new Set(); const dup = planRowsDraft.find(r => r.serviceId && (used.has(r.serviceId) || !used.add(r.serviceId)));
+      if (dup) return fail(`“${dup.name}” aparece mais de uma vez no plano. Cada serviço só pode entrar uma vez.`);
       const missing = planRowsDraft.find(r => !r.fixed && !(Number(r.price) > 0));
-      if (missing) {
-        const input = $(`[data-prow="${missing.id}"] [data-pfield="price"]`, card);
-        toast(`Informe o preço de mensalista de ${missing.name}.`); if (input) { input.classList.add('need-price'); input.focus(); } return;
-      }
+      if (missing) return fail(`Informe o preço de mensalista de ${missing.name}.`, $(`[data-prow="${missing.id}"] [data-pfield="price"]`, card));
+      if ($('#pc-enabled').classList.contains('on') && !(Number($('#pc-total').value) > 0)) return fail('Informe o valor total do plano no mês.', $('#pc-total'));
       save.disabled = true;
       try { await api('/api/plan-config', { method: 'PUT', body: JSON.stringify(readPlanForm()) }); const saved = readPlanForm(); await reloadState(); renderServiceAdmin();
-        const fixedOk = saved.services.some(r => r.fixed && Number(r.price) > 0);
-        toast(saved.enabled && !fixedOk ? 'Plano salvo, mas ainda NÃO aparece no site: defina o preço de mensalista de Corte, Barba ou Sobrancelha.' : saved.enabled ? 'Plano mensal salvo e visível no site.' : 'Plano salvo (oculto no site: ligue “Mostrar plano no site”).'); }
+        toast(saved.enabled ? 'Plano mensal salvo e visível no site.' : 'Plano salvo (oculto no site: ligue “Mostrar plano no site”).'); }
       catch (error) { toast(error.message); save.disabled = false; }
     }
   });
@@ -574,7 +585,9 @@ function wirePlanConfig(root) {
   });
   card.addEventListener('change', event => {
     if (event.target.dataset.pfield !== 'serviceId') return;
-    const row = rowOf(event.target); if (row) { row.serviceId = event.target.value || null; drawPlanConfig(); }
+    const row = rowOf(event.target); if (!row) return;
+    row.serviceId = event.target.value || null; const sv = state.data.services.find(x => x.id === row.serviceId);
+    row.name = sv ? sv.name : (FIXED_DEFAULT_NAME[row.id] || row.name); drawPlanConfig();
   });
 }
 
@@ -621,17 +634,16 @@ function renderPlanBox() {
   const wrap = $('#plan-wrap'); if (!wrap) return;
   const plan = planOf(); const link = $('#nav-plano');
   const fixed = plan.services.filter(r => r.fixed); const addons = plan.services.filter(r => !r.fixed && r.price > 0);
-  const visible = plan.enabled && planPerVisit(plan) > 0;
+  const visible = plan.enabled && Number(plan.monthlyValue) > 0;
   wrap.hidden = !visible; if (link) link.style.display = visible ? '' : 'none';
   if (!visible) return;
   planPick.cuts = Math.max(plan.includedCuts, Math.min(planPick.cuts ?? plan.includedCuts, 60));
   planPick.deps = Math.max(0, Math.min(planPick.deps, plan.maxDependents));
   planPick.extras = planPick.extras.filter(id => addons.some(r => r.id === id));
-  const perVisit = planPerVisit(plan, planPick.extras); const visitsCost = perVisit * planPick.cuts, depsCost = planPick.deps * plan.dependentValue;
-  const total = visitsCost + depsCost; const chosen = plan.services.filter(r => r.fixed || planPick.extras.includes(r.id));
-  const fromPrice = planPerVisit(plan) * plan.includedCuts;
+  const baseCost = planBaseCost(plan, planPick.cuts); const pickedExtras = addons.filter(r => planPick.extras.includes(r.id)); const extrasCost = round2(planExtrasPerVisit(plan, planPick.extras) * planPick.cuts); const depsCost = planPick.deps * plan.dependentValue;
+  const total = planTotal(plan, planPick.deps, planPick.cuts, planPick.extras);
+  const fromPrice = round2(plan.monthlyValue);
   const stepper = (key, value, min, max) => `<div class="stepper"><button type="button" data-plan-step="${key}" data-dir="-1" aria-label="Diminuir" ${value <= min ? 'disabled' : ''}>−</button><b>${value}</b><button type="button" data-plan-step="${key}" data-dir="1" aria-label="Aumentar" ${value >= max ? 'disabled' : ''}>+</button></div>`;
-  const priceOf = r => r.price > 0 ? BRL.format(r.price) : 'A definir';
   $('#plan-box').innerHTML = `<div class="plan-info">
       <p class="summary-kicker">PLANO MENSAL</p>
       <h3>${esc(plan.name)}</h3>
@@ -639,7 +651,7 @@ function renderPlanBox() {
       <div class="plan-from"><small>A partir de</small><strong>${BRL.format(fromPrice)}</strong><span>/mês</span></div>
       <ul class="plan-perks">
         <li><i>✓</i>Em cada visita: ${fixed.map(r => esc(r.name)).join(' + ')}</li>
-        <li><i>✓</i>${plan.includedCuts} ${plan.includedCuts === 1 ? 'visita mínima' : 'visitas mínimas'} por mês, com preço de mensalista</li>
+        <li><i>✓</i>${plan.includedCuts} ${plan.includedCuts === 1 ? 'visita mínima' : 'visitas mínimas'} por mês, valor total já fechado</li>
         ${addons.length ? '<li><i>✓</i>Adicione outros serviços ao seu plano</li>' : ''}
         ${plan.maxDependents > 0 ? `<li><i>✓</i>${plan.dependentValue > 0 ? `Dependente: + ${BRL.format(plan.dependentValue)} por mês` : 'Dependentes sem custo extra'} (até ${plan.maxDependents})</li>` : ''}
       </ul>
@@ -648,13 +660,13 @@ function renderPlanBox() {
       <h4>Monte o seu plano</h4>
       <div class="plan-row"><div><b>Visitas por mês</b><small>Mínimo de ${plan.includedCuts}</small></div>${stepper('cuts', planPick.cuts, plan.includedCuts, 60)}</div>
       <div class="plan-svcs"><small class="plan-svcs-title">Serviços em cada visita</small>
-        ${fixed.map(r => `<div class="plan-svc fixed"><i>✓</i><span>${esc(r.name)}<em>Já incluso no plano</em></span><b>${priceOf(r)}</b></div>`).join('')}
-        ${addons.map(r => { const on = planPick.extras.includes(r.id); return `<button type="button" class="plan-svc ${on ? 'on' : ''}" data-plan-svc="${esc(r.id)}" aria-pressed="${on}"><i>${on ? '✓' : '+'}</i><span>${esc(r.name)}<em>${on ? 'Adicionado ao plano' : 'Toque para adicionar'}</em></span><b>${BRL.format(r.price)}</b></button>`; }).join('')}
+        ${fixed.map(r => `<div class="plan-svc fixed"><i>✓</i><span>${esc(r.name)}<em>Já incluso no plano</em></span><b>Incluso</b></div>`).join('')}
+        ${addons.map(r => { const on = planPick.extras.includes(r.id); return `<button type="button" class="plan-svc ${on ? 'on' : ''}" data-plan-svc="${esc(r.id)}" aria-pressed="${on}"><i>${on ? '✓' : '+'}</i><span>${esc(r.name)}<em>${on ? 'Adicionado ao plano' : 'Toque para adicionar'}</em></span><b>+ ${BRL.format(r.price)}<small>/visita</small></b></button>`; }).join('')}
       </div>
       ${plan.maxDependents > 0 ? `<div class="plan-row"><div><b>Dependentes</b><small>Filho, irmão, pai… até ${plan.maxDependents}</small></div>${stepper('deps', planPick.deps, 0, plan.maxDependents)}</div>` : ''}
       <div class="plan-lines">
-        <div><span>Cada visita (${chosen.map(r => esc(r.name)).join(' + ')})</span><b>${BRL.format(perVisit)}</b></div>
-        <div><span>${planPick.cuts} ${planPick.cuts === 1 ? 'visita' : 'visitas'} no mês</span><b>${BRL.format(visitsCost)}</b></div>
+        <div><span>Plano base · ${planPick.cuts} ${planPick.cuts === 1 ? 'visita' : 'visitas'} (${fixed.map(r => esc(r.name)).join(' + ')})</span><b>${BRL.format(baseCost)}</b></div>
+        ${pickedExtras.length ? `<div><span>${pickedExtras.map(r => esc(r.name)).join(' + ')} · ${planPick.cuts} ${planPick.cuts === 1 ? 'visita' : 'visitas'}</span><b>${BRL.format(extrasCost)}</b></div>` : ''}
         ${planPick.deps ? `<div><span>${planPick.deps} ${planPick.deps === 1 ? 'dependente' : 'dependentes'}</span><b>${BRL.format(depsCost)}</b></div>` : ''}
       </div>
       <div class="plan-total"><span>Total por mês</span><strong>${BRL.format(total)}</strong></div>
@@ -976,7 +988,7 @@ function renderPlans() {
       </div>
       <div class="appointment-details plan-details">
         ${wait ? `<div class="plan-block"><small>Pedido feito pelo site${plan.requestedAt ? ` em ${regDate(plan.requestedAt)}` : ''}</small><p class="muted">${plan.services && plan.services.length ? '' : `Cortes acima do mínimo: ${Math.max(0, (plan.cutsPerMonth || 0) - (plan.includedCuts || plan.cutsPerMonth || 0))} · `}Combine o pagamento com o cliente no WhatsApp e confirme aqui para ativar o plano.</p></div>` : ''}
-        ${plan.services && plan.services.length ? `<div class="plan-block"><small>Serviços em cada visita</small><div class="chips">${plan.services.map(r => `<span class="chip dep-chip"><b>${esc(r.name)}</b><em>${r.price > 0 ? BRL.format(r.price) : 'a definir'}</em></span>`).join('')}</div></div>` : ''}
+        ${plan.services && plan.services.length ? `<div class="plan-block"><small>Serviços em cada visita</small><div class="chips">${plan.services.map(r => `<span class="chip dep-chip"><b>${esc(r.name)}</b><em>${r.price > 0 ? BRL.format(r.price) : (r.fixed ? 'fixo' : 'a definir')}</em></span>`).join('')}</div></div>` : ''}
         <div class="plan-block"><small>Dependentes cadastrados</small>${depList.length ? `<div class="chips">${depList.map(dep => `<span class="chip dep-chip"><b>${esc(dep.name)}</b>${dep.phone ? `<a href="https://wa.me/${esc(waNumber(dep.phone))}" target="_blank" rel="noopener">${esc(phoneFmt(dep.phone))} ↗</a>` : '<em>sem WhatsApp</em>'}</span>`).join('')}</div>` : '<p class="muted">Nenhum dependente cadastrado.</p>'}</div>
         <div class="plan-block"><small>Cortes registrados ${history.length ? `· últimos ${history.length}` : ''}</small>
           ${history.length ? history.map(cut => `<div class="cut-line"><span>${dateFmt(cut.date)}${cut.time ? ` · ${esc(cut.time)}` : ''}</span><b>${cut.dependentName ? `Dependente: ${esc(cut.dependentName)}` : 'Titular'}</b>${cut.kind === 'extra' ? `<em class="cut-tag extra">Adicional ${BRL.format(cut.charge || 0)}</em>` : cut.appointmentId ? '<em class="cut-tag">Agendamento · incluso</em>' : ''}${cut.appointmentId ? `<button class="mini-btn" data-plan-action="cut-msg" data-cut="${esc(cut.id)}">Mensagem</button>` : ''}<button class="mini-btn danger" data-plan-action="remove-cut" data-cut="${esc(cut.id)}">Remover</button></div>`).join('') : '<p class="muted">Nenhum corte registrado ainda.</p>'}</div>
