@@ -62,14 +62,20 @@
         <h2>UM POUCO DO <em>nosso trabalho</em></h2>
         <p>Cada atendimento é pensado no detalhe, da conversa inicial ao acabamento final. Veja alguns resultados e acompanhe mais no Instagram.</p>
       </div>
-      <div class="work-grid">
-        <figure class="work-tile"><img src="assets/trabalhos/trabalho-1.jpg" alt="Corte feito na Willzinho Barber" loading="lazy" decoding="async" onerror="this.closest('figure').remove()"></figure>
-        <figure class="work-tile"><img src="assets/trabalhos/trabalho-2.jpg" alt="Corte feito na Willzinho Barber" loading="lazy" decoding="async" onerror="this.closest('figure').remove()"></figure>
-        <figure class="work-tile"><img src="assets/trabalhos/trabalho-3.jpg" alt="Corte feito na Willzinho Barber" loading="lazy" decoding="async" onerror="this.closest('figure').remove()"></figure>
-        <figure class="work-tile"><img src="assets/trabalhos/trabalho-4.jpg" alt="Corte feito na Willzinho Barber" loading="lazy" decoding="async" onerror="this.closest('figure').remove()"></figure>
-        <figure class="work-tile"><img src="assets/trabalhos/trabalho-5.jpg" alt="Corte feito na Willzinho Barber" loading="lazy" decoding="async" onerror="this.closest('figure').remove()"></figure>
-        <figure class="work-tile"><img src="assets/trabalhos/trabalho-6.jpg" alt="Corte feito na Willzinho Barber" loading="lazy" decoding="async" onerror="this.closest('figure').remove()"></figure>
-        <figure class="work-tile"><img src="assets/trabalhos/trabalho-7.jpg" alt="Corte feito na Willzinho Barber" loading="lazy" decoding="async" onerror="this.closest('figure').remove()"></figure>
+      <div class="cg-scroll" id="cg-scroll">
+        <div class="cg-stage">
+          <div class="cg-ring" id="cg-ring">
+          <figure class="cg-card"><img src="assets/trabalhos/trabalho-1.jpg" alt="Corte feito na Willzinho Barber" decoding="async" draggable="false" onerror="this.closest('figure').remove()"></figure>
+          <figure class="cg-card"><img src="assets/trabalhos/trabalho-2.jpg" alt="Corte feito na Willzinho Barber" decoding="async" draggable="false" onerror="this.closest('figure').remove()"></figure>
+          <figure class="cg-card"><img src="assets/trabalhos/trabalho-3.jpg" alt="Corte feito na Willzinho Barber" decoding="async" draggable="false" onerror="this.closest('figure').remove()"></figure>
+          <figure class="cg-card"><img src="assets/trabalhos/trabalho-4.jpg" alt="Corte feito na Willzinho Barber" decoding="async" draggable="false" onerror="this.closest('figure').remove()"></figure>
+          <figure class="cg-card"><img src="assets/trabalhos/trabalho-5.jpg" alt="Corte feito na Willzinho Barber" decoding="async" draggable="false" onerror="this.closest('figure').remove()"></figure>
+          <figure class="cg-card"><img src="assets/trabalhos/trabalho-6.jpg" alt="Corte feito na Willzinho Barber" decoding="async" draggable="false" onerror="this.closest('figure').remove()"></figure>
+          <figure class="cg-card"><img src="assets/trabalhos/trabalho-7.jpg" alt="Corte feito na Willzinho Barber" decoding="async" draggable="false" onerror="this.closest('figure').remove()"></figure>
+          </div>
+          <p class="cg-hint" id="cg-hint"><span></span>Role para girar a galeria</p>
+          <div class="cg-progress"><i id="cg-bar"></i></div>
+        </div>
       </div>
       <div class="center-row">
         <a class="outline-btn" href="https://www.instagram.com/willzinhobaarber_/" target="_blank" rel="noopener">Ver mais no Instagram @willzinhobaarber_ <span>↗</span></a>
@@ -307,5 +313,6 @@
   <div id="toast" class="toast" role="status"></div>
   <script src="store.js"></script>
   <script src="app.js" defer></script>
+  <script src="gallery.js" defer></script>
 </body>
 </html>
