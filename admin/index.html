@@ -10,6 +10,7 @@
 <body class="admin-page">
   <div class="noise"></div>
   <header class="topbar admin-header">
+    <button type="button" class="admin-menu-btn" id="admin-menu-btn" aria-label="Abrir menu" aria-expanded="false" aria-controls="admin-sidebar"><i></i><i></i><i></i></button>
     <a class="brand" href="./" aria-label="Ir para a visão geral">
       <img class="brand-logo" src="../assets/logo-willzinho.jpeg" alt="Willzinho Barber">
       <span><b>WILLZINHO BARBER</b><small>PAINEL ADMINISTRATIVO</small></span>
@@ -18,7 +19,9 @@
   </header>
 
   <main id="admin-view" class="admin-shell">
-    <aside class="admin-sidebar">
+    <div class="admin-backdrop" id="admin-backdrop" hidden></div>
+    <aside class="admin-sidebar" id="admin-sidebar">
+      <button type="button" class="admin-menu-close" id="admin-menu-close" aria-label="Fechar menu">×</button>
       <div class="admin-label">PAINEL ADMINISTRATIVO</div>
       <nav>
         <button class="admin-nav active" data-admin-tab="dashboard"><span>⌁</span>Visão geral</button>
