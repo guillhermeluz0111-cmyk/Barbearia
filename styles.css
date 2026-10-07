@@ -1055,23 +1055,29 @@ button.plan-svc:hover{border-color:var(--orange)}
   .hours-grid{grid-template-columns:1fr}
 }
 
-/* Galeria circular (gira com a rolagem) */
-.work{--cg-w:clamp(220px,23vw,320px)}
-.cg-scroll{position:relative;height:420vh;margin:0 -7vw}
-.cg-stage{position:sticky;top:0;height:100vh;height:100svh;overflow:hidden;display:grid;place-items:center;perspective:1500px;perspective-origin:50% 42%;
-  background:radial-gradient(ellipse at 50% 55%,rgba(242,84,45,.11),transparent 62%)}
-.cg-ring{position:relative;width:var(--cg-w);height:calc(var(--cg-w) * 4 / 3);transform-style:preserve-3d;will-change:transform;margin-top:40px}
-.cg-card{position:absolute;inset:0;margin:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;will-change:opacity}
-.cg-card img{display:block;width:100%;height:100%;object-fit:cover;object-position:center 30%;border:1px solid rgba(255,255,255,.1);box-shadow:0 30px 60px rgba(0,0,0,.55);user-select:none;-webkit-user-drag:none}
-.cg-hint{position:absolute;left:0;right:0;bottom:46px;margin:0;display:flex;align-items:center;justify-content:center;gap:12px;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:#a09a90;transition:opacity .4s}
-.cg-hint span{width:1px;height:26px;background:linear-gradient(var(--orange),transparent);animation:cgHint 1.6s ease-in-out infinite}
+/* Galeria circular (gira ao tocar nas laterais, arrastar ou usar as setas) */
+.work{--cg-w:clamp(210px,22vw,300px)}
+.cg-wrap{margin:0 -7vw}
+.cg-stage{position:relative;height:clamp(500px,76vh,640px);overflow:hidden;display:grid;place-items:center;perspective:1500px;perspective-origin:50% 42%;cursor:grab;touch-action:pan-y;user-select:none;-webkit-user-select:none;outline:0;
+  background:radial-gradient(ellipse at 50% 52%,rgba(242,84,45,.11),transparent 62%)}
+.cg-stage.dragging{cursor:grabbing}
+.cg-stage:focus-visible{box-shadow:inset 0 0 0 2px var(--orange)}
+.cg-ring{position:relative;width:var(--cg-w);height:calc(var(--cg-w) * 4 / 3);transform-style:preserve-3d;will-change:transform;margin-top:-18px}
+.cg-card{position:absolute;inset:0;margin:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;cursor:pointer}
+.cg-card.front{cursor:grab}
+.cg-card img{display:block;width:100%;height:100%;object-fit:cover;object-position:center 30%;border:1px solid rgba(255,255,255,.1);box-shadow:0 30px 60px rgba(0,0,0,.55);-webkit-user-drag:none;pointer-events:none}
+.cg-arrow{position:absolute;top:calc(50% - 18px);width:50px;height:50px;border-radius:50%;border:1px solid rgba(255,255,255,.22);background:rgba(18,17,15,.55);backdrop-filter:blur(6px);color:var(--paper);font-size:30px;line-height:1;padding:0 0 4px;cursor:pointer;z-index:5;transition:.2s}
+.cg-arrow:hover{background:var(--orange);border-color:var(--orange)}
+.cg-arrow.prev{left:max(14px,4vw)}.cg-arrow.next{right:max(14px,4vw)}
+.cg-hint{position:absolute;left:0;right:0;bottom:50px;margin:0;text-align:center;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#a09a90;transition:opacity .4s;pointer-events:none}
 .cg-hint.gone{opacity:0}
-@keyframes cgHint{0%,100%{transform:scaleY(.4);transform-origin:top}50%{transform:scaleY(1)}}
-.cg-progress{position:absolute;left:50%;bottom:26px;width:120px;height:2px;margin-left:-60px;background:rgba(255,255,255,.12)}
-.cg-progress i{display:block;height:100%;background:var(--orange);transform:scaleX(0);transform-origin:left}
+.cg-dots{position:absolute;left:0;right:0;bottom:18px;display:flex;justify-content:center;gap:4px}
+.cg-dots button{width:22px;height:22px;padding:0;border:0;background:transparent;cursor:pointer;position:relative}
+.cg-dots button:after{content:"";position:absolute;left:50%;top:50%;width:8px;height:8px;margin:-4px;border-radius:50%;background:rgba(255,255,255,.28);transition:.25s}
+.cg-dots button.on:after{background:var(--orange);transform:scale(1.35)}
 @media(max-width:760px){
-  .work{--cg-w:clamp(180px,56vw,240px)}
-  .cg-scroll{height:340vh;margin:0 -20px}
-  .cg-stage{perspective:1000px}
+  .work{--cg-w:clamp(180px,54vw,240px)}
+  .cg-wrap{margin:0 -20px}
+  .cg-stage{height:clamp(440px,66vh,560px);perspective:1000px}
+  .cg-arrow{width:42px;height:42px;font-size:26px}
 }
-@media(prefers-reduced-motion:reduce){.cg-hint span{animation:none}}
