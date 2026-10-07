@@ -1054,3 +1054,12 @@ button.plan-svc:hover{border-color:var(--orange)}
   .plan-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
   .hours-grid{grid-template-columns:1fr}
 }
+
+/* Galeria "nosso trabalho": fotos verticais sem legenda; a última linha fica centralizada */
+.work-grid{display:flex;flex-wrap:wrap;justify-content:center;gap:14px;max-width:1240px;margin:0 auto}
+.work-tile{flex:0 0 calc((100% - 42px) / 4);aspect-ratio:3/4}
+.work-tile img{object-position:center 30%}
+@media(max-width:760px){
+  .work-grid{gap:10px}
+  .work-tile{flex-basis:calc((100% - 10px) / 2)}
+}
