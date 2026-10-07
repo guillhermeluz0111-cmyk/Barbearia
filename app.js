@@ -933,6 +933,29 @@ function closeClient() {
   state.clientKey = null; history.pushState(null, '', '#clientes');
   renderClients(); window.scrollTo({ top: 0 });
 }
+/* ---------- Admin mobile: menu lateral expansível ---------- */
+function setAdminMenu(open) {
+  const side = $('#admin-sidebar'); if (!side) return;
+  side.classList.toggle('open', open); $('#admin-backdrop').hidden = !open; document.body.classList.toggle('admin-menu-open', open);
+  const btn = $('#admin-menu-btn'); btn.setAttribute('aria-expanded', String(open)); btn.setAttribute('aria-label', open ? 'Fechar menu' : 'Abrir menu');
+}
+/* Tabelas viram cartões no celular: cada célula recebe o título da coluna (data-label). */
+function labelAdminTables() {
+  $$('.admin-content .data-table').forEach(table => {
+    const heads = $$('thead th', table).map(th => th.textContent.trim());
+    $$('tbody tr', table).forEach(tr => Array.from(tr.children).forEach((td, i) => { if (td.dataset.label === undefined) td.dataset.label = heads[i] || ''; }));
+  });
+}
+function wireAdminMobile() {
+  $('#admin-menu-btn').addEventListener('click', () => setAdminMenu(!$('#admin-sidebar').classList.contains('open')));
+  $('#admin-menu-close').addEventListener('click', () => setAdminMenu(false));
+  $('#admin-backdrop').addEventListener('click', () => setAdminMenu(false));
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') setAdminMenu(false); });
+  window.matchMedia('(min-width: 901px)').addEventListener('change', event => { if (event.matches) setAdminMenu(false); });
+  let queued = false;
+  new MutationObserver(() => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; labelAdminTables(); }); }).observe($('.admin-content'), { childList: true, subtree: true });
+  labelAdminTables();
+}
 function navigateAdmin(tab) {
   if (tab === 'clients') {
     state.clientKey = null; setAdminTab('clients'); renderClients();
@@ -1327,6 +1350,7 @@ function setAdminTab(tab) {
   $$('.admin-nav').forEach(button => button.classList.toggle('active', button.dataset.adminTab === tab));
   $$('.admin-panel').forEach(panel => panel.classList.toggle('hidden', panel.id !== `admin-${tab}`));
   $('#admin-title').textContent = titles[tab];
+  setAdminMenu(false); window.scrollTo({ top: 0 });
 }
 /* ---------- Painel ao vivo: detecta novos agendamentos sozinho ---------- */
 const LIVE_INTERVAL = 5000;
@@ -1387,6 +1411,7 @@ async function init() {
       if (Store.mode === 'local') setTimeout(() => toast('Modo local: dados salvos só neste navegador (Firestore indisponível).'), 600);
       renderAdmin();
       $$('.admin-nav').forEach(button => button.addEventListener('click', () => navigateAdmin(button.dataset.adminTab)));
+      wireAdminMobile();
       $('#reschedule-date').addEventListener('change', () => { state.rescheduleTime = ''; $('#save-reschedule').disabled = true; loadRescheduleSlots(); });
       $('#save-reschedule').addEventListener('click', saveReschedule);
       $$('.dialog-close').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
